@@ -12,3 +12,6 @@ spark-warehouse/
 metastore_db/
 derby.log
 .venv/
+
+# Fichiers système macOS
+.DS_Store
