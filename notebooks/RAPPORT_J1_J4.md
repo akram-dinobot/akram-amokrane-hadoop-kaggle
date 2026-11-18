@@ -1,14 +1,16 @@
-# Rapport — Jours 1, 2 & 3 : de la donnée brute Kaggle à la couche Gold
+# Rapport — Jours 1 à 4 : de la donnée brute Kaggle au dashboard
 
 **Sujet :** Accidentologie routière au Royaume-Uni (2005–2017)
 **Problématique :** quels facteurs (météo, luminosité, type de route, âge du conducteur, type de véhicule) aggravent la sévérité des accidents ?
-**Stack :** HDFS (1 NameNode + 3 DataNodes) · Spark 4.2 · Delta Lake 4.4
-**Notebooks :** `J1_HDFS_Ingestion_Bronze.ipynb`, `J2_Spark_Delta_Silver.ipynb` et `J3_Analytics_SQL_Gold.ipynb`
+**Stack :** HDFS (1 NameNode + 3 DataNodes) · Spark 4.2 · Delta Lake 4.4 · SciPy · scikit-learn · Streamlit + Plotly
+**Notebooks :** `J1_HDFS_Ingestion_Bronze.ipynb`, `J2_Spark_Delta_Silver.ipynb`, `J3_Analytics_SQL_Gold.ipynb` et `J4_Stats_Segmentation_Dashboard.ipynb`
+**Application :** `app/dashboard.py` (http://localhost:8501)
 
 **Sommaire :**
-- Partie 1 — Jour 1 : création de la couche Bronze (sections 3)
+- Partie 1 — Jour 1 : création de la couche Bronze (section 3)
 - Partie 2 — Jour 2 : de Bronze à Silver (sections 4 à 13)
 - Partie 3 — Jour 3 : analyses Spark SQL et couche Gold (sections 14 à 20)
+- Partie 4 — Jour 4 : tests statistiques, segmentation et dashboard (sections 21 à 26)
 
 ---
 
@@ -22,8 +24,8 @@ flowchart LR
     L -->|"copie HDFS"| R["HDFS<br/>/lakehouse/bronze/raw/"]
     R -->|"J1 : ingestion<br/>+ traçabilité"| B["BRONZE<br/>accidents · vehicles<br/>(Delta, texte brut)"]
     B -->|"J2 : nettoyage<br/>typage · agrégation · jointure"| S["SILVER<br/>accidents_enriched<br/>(Delta, typée, enrichie)"]
-    S -->|"J3 : Spark SQL<br/>agrégations · fenêtrage"| G["GOLD<br/>pareto_districts<br/>evolution_mensuelle<br/>facteurs_gravite"]
-    G -.->|"J4"| D["Dashboard Streamlit"]
+    S -->|"J3 : Spark SQL<br/>agrégations · fenêtrage<br/>J4 : K-Means"| G["GOLD<br/>pareto_districts<br/>evolution_mensuelle<br/>facteurs_gravite<br/>segments_districts"]
+    G -->|"J4"| D["Dashboard Streamlit<br/>:8501"]
 
     style B fill:#cd7f32,color:#fff
     style S fill:#c0c0c0,color:#000
@@ -946,3 +948,281 @@ flowchart LR
     style S fill:#c0c0c0,color:#000
     style G fill:#ffd700,color:#000
 ```
+
+---
+
+# PARTIE 4 — Jour 4 : tests statistiques, segmentation et dashboard
+
+## 21. Vue d'ensemble du Jour 4
+
+Au Jour 3, nous avons **observé** des différences. Le Jour 4 a trois objectifs :
+1. **les prouver** avec des tests statistiques ;
+2. **regrouper** les districts qui se ressemblent (K-Means) ;
+3. **les montrer** dans un dashboard interactif.
+
+```mermaid
+flowchart LR
+    S[("SILVER<br/>2 047 256 accidents")] -->|"select 4 colonnes<br/>+ sample 5 %"| E["Échantillon<br/>102 462 lignes"]
+    E --> T1["Test χ²<br/>luminosité × gravité"]
+    E --> T2["Test Mann-Whitney<br/>victimes rural vs urbain"]
+    S -->|"groupBy district"| D["416 districts<br/>× 5 features"]
+    D -->|"log1p + StandardScaler<br/>+ K-Means k=3"| G4[("gold/segments_districts<br/>416 lignes")]
+    G1[("gold/pareto_districts")] --> APP["Dashboard Streamlit<br/>:8501"]
+    G2[("gold/evolution_mensuelle")] --> APP
+    G3[("gold/facteurs_gravite")] --> APP
+    G4 --> APP
+
+    style S fill:#c0c0c0,color:#000
+    style G1 fill:#ffd700,color:#000
+    style G2 fill:#ffd700,color:#000
+    style G3 fill:#ffd700,color:#000
+    style G4 fill:#ffd700,color:#000
+```
+
+## 22. Étape 1 — Tests d'hypothèses (exercice 1.1)
+
+### 22.1 Le principe
+
+Un test statistique répond à une question : **la différence observée est-elle réelle, ou due au hasard ?**
+- **H₀** (hypothèse nulle) : il n'y a **aucun** lien, c'est le hasard.
+- **H₁** : il y a un lien.
+- Le test donne une **p-value**. Si **p < 0,05**, on rejette H₀ : le lien est réel.
+
+Le choix du test dépend du type des variables :
+
+| Situation | Test | Utilisé ici ? |
+|---|---|---|
+| 2 variables **catégorielles** | **χ²** | ✅ Luminosité × gravité |
+| Un nombre asymétrique, **2 groupes** | **Mann-Whitney** | ✅ Victimes : rural vs urbain |
+| Un nombre asymétrique, **3 groupes ou plus** | Kruskal-Wallis | — |
+| 2 **nombres** | Spearman | — |
+
+### 22.2 Hypothèses
+
+**Test #1 — χ² : luminosité × gravité**
+- **H₀ :** la gravité de l'accident est **indépendante** de la luminosité.
+- **H₁ :** la gravité **dépend** de la luminosité.
+- **Pourquoi ce test :** les deux variables sont **qualitatives** (jour / nuit… et Slight / Serious / Fatal).
+
+**Test #2 — Mann-Whitney : nombre de victimes, rural vs urbain**
+- **H₀ :** le nombre de victimes a la **même distribution** en zone rurale et urbaine.
+- **H₁ :** le nombre de victimes est **plus élevé** en zone rurale (test unilatéral, `alternative="greater"`).
+- **Pourquoi ce test :** on compare **2 groupes**, et le nombre de victimes est très déséquilibré (presque toujours 1, parfois jusqu'à 93). Mann-Whitney compare des **rangs** (un classement), il n'est donc pas faussé par les valeurs extrêmes, contrairement à un test basé sur la moyenne.
+
+### 22.3 Préparation des données : la bonne pratique Big Data
+
+On ne fait **jamais** `toPandas()` sur toute la table Silver. Tout le travail lourd est fait par Spark :
+
+```python
+df_sample = (
+    spark.read.format("delta").load(SILVER_MAIN_PATH)
+    .select("light_conditions", "accident_severity",
+            "urban_or_rural_area", "number_of_casualties")   # 4 colonnes seulement
+    .dropna()
+    .filter(F.col("urban_or_rural_area").isin("Rural", "Urban"))
+    .sample(fraction=0.05, seed=42)                          # ~5 % des accidents
+    .toPandas()                                              # 102 462 lignes
+)
+```
+
+`seed=42` permet de retrouver le même échantillon à chaque exécution.
+
+### 22.4 Résultats du test #1 (χ²)
+
+**% de chaque gravité selon la luminosité :**
+
+| Luminosité | Fatal | Serious | Slight |
+|---|---|---|---|
+| Jour (*Daylight*) | 1,0 % | 13,4 % | 85,6 % |
+| Nuit éclairée | 1,4 % | 15,0 % | 83,7 % |
+| Nuit, éclairage éteint | 1,5 % | 16,3 % | 82,3 % |
+| Nuit, éclairage inconnu | 1,6 % | 13,9 % | 84,5 % |
+| **Nuit sans éclairage** | **4,1 %** | **20,2 %** | 75,7 % |
+
+| Statistique | Valeur |
+|---|---|
+| χ² | 679,8 (8 degrés de liberté) |
+| p-value | **1,57 × 10⁻¹⁴¹** |
+| V de Cramér | **0,058** |
+
+### 22.5 Résultats du test #2 (Mann-Whitney)
+
+| Groupe | Accidents | Médiane | Moyenne | 2 victimes ou plus |
+|---|---|---|---|---|
+| Rural | 36 389 | 1 | 1,474 | **30,3 %** |
+| Urbain | 66 073 | 1 | 1,273 | **18,8 %** |
+
+| Statistique | Valeur |
+|---|---|
+| U | 1 344 048 954 |
+| p-value | **≈ 0** |
+| Probabilité de supériorité | **0,559** (0,5 = aucune différence) |
+
+### 22.6 Interprétation
+
+**Test #1 :** p est bien plus petite que 0,05 → **on rejette H₀** : la gravité **dépend** de la luminosité. La nuit sans éclairage, **4,1 %** des accidents sont mortels contre **1,0 %** le jour, soit **4 fois plus**.
+
+**Test #2 :** p ≈ 0 → **on rejette H₀** : les accidents à la campagne font **plus de victimes**. Les médianes valent 1 dans les deux groupes, mais **30 %** des accidents ruraux font 2 victimes ou plus, contre **19 %** en ville.
+
+**Le piège des grands échantillons :** avec 100 000 lignes, même une différence minuscule devient significative. C'est pour cela qu'on regarde aussi la **taille de l'effet** :
+- **V de Cramér = 0,058 :** lien **faible en intensité**. La plupart des accidents restent légers quelle que soit la luminosité, et la nuit sans éclairage ne concerne qu'une petite partie des accidents.
+- **Probabilité de supériorité = 0,56 :** un accident rural a un peu plus de chances de faire plus de victimes qu'un accident urbain.
+
+**Conclusion :** les deux tests **confirment le Jour 3**. Les effets sont **réels mais modérés** : ces facteurs augmentent le risque sans tout expliquer.
+
+## 23. Étape 2 — Segmentation des districts avec K-Means (exercice 2.1)
+
+### 23.1 L'idée
+
+K-Means **regroupe automatiquement les éléments qui se ressemblent**, sans qu'on lui dise comment (apprentissage non supervisé). Nous segmentons les **416 districts** selon leur profil d'accidents.
+
+### 23.2 Les features (agrégation PySpark)
+
+Spark résume les 2 millions d'accidents en **une ligne par district** avec 5 features. Seules les 416 lignes passent ensuite dans pandas.
+
+| Feature | Ce qu'elle décrit | Médiane |
+|---|---|---|
+| `nb_accidents` | Le **volume** d'accidents | 4 036 |
+| `pct_graves_mortels` | La **gravité** | 15,7 % |
+| `pct_nuit` | La part d'accidents **de nuit** | 26,5 % |
+| `pct_rural` | La part d'accidents **à la campagne** | 49,8 % |
+| `pct_vitesse_60_plus` | La part sur des **routes rapides** (≥ 60 mph) | 29,5 % |
+
+Ces features reprennent les facteurs aggravants identifiés au Jour 3 et confirmés par les tests.
+
+### 23.3 Le prétraitement
+
+```mermaid
+flowchart LR
+    A["416 districts<br/>× 5 features"] --> B["log1p(nb_accidents)<br/>écrase les grandes villes"]
+    B --> C["StandardScaler<br/>même échelle pour tout"]
+    C --> D["K-Means<br/>k = 3"]
+    D --> E["Médianes par cluster<br/>→ nom métier"]
+    E --> F[("gold/segments_districts")]
+```
+
+- **`log1p` sur `nb_accidents` :** cette feature va de 318 à 39 662 accidents. Sans le log, les très grandes villes (Birmingham…) seraient si loin des autres qu'elles formeraient un groupe à elles seules.
+- **`StandardScaler` :** K-Means mesure des **distances**. Sans mise à l'échelle, le volume (en milliers) écraserait les pourcentages (de 0 à 100).
+
+### 23.4 Choix du nombre de groupes (k)
+
+| k | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|
+| Score de silhouette | **0,343** | 0,249 | 0,233 | 0,223 | 0,236 |
+
+Le score de silhouette mesure si chaque district est bien **proche de son groupe** et **loin des autres**. **k = 2** a le meilleur score, mais il sépare seulement « ville » et « campagne ». **k = 3** ajoute un segment **mixte**, plus utile pour l'analyse, avec un score encore correct.
+
+### 23.5 Résultats : le profil médian de chaque segment
+
+| Segment | Districts | Accidents | Graves | Nuit | Rural | ≥ 60 mph | Exemples |
+|---|---|---|---|---|---|---|---|
+| 🏙️ **Urbain dense** | 96 | 8 219 | **12,9 %** | 28,3 % | 6,8 % | 2,3 % | Birmingham, Leeds, Westminster, Glasgow City |
+| 🏘️ **Mixte / périurbain** | 153 | 3 710 | **14,5 %** | 26,3 % | 38,8 % | 23,0 % | Milton Keynes, Plymouth, Rotherham |
+| 🌲 **Rural** | 167 | 3 241 | **19,3 %** | 25,4 % | 75,3 % | 50,3 % | Cornwall, Wiltshire, County Durham |
+
+```mermaid
+xychart-beta
+    title "% d'accidents graves ou mortels par segment"
+    x-axis ["Urbain dense", "Mixte", "Rural"]
+    y-axis "% graves ou mortels" 0 --> 25
+    bar [12.9, 14.5, 19.3]
+```
+
+### 23.6 Interprétation
+
+- **En ville :** beaucoup d'accidents, mais **peu graves**, car on y roule lentement.
+- **À la campagne :** moins d'accidents, mais **beaucoup plus graves**, car les routes sont rapides (la moitié des accidents ruraux ont lieu sur des routes à 60 mph ou plus).
+- **La nuit** est à peu près la même partout (25 à 28 %) : ce n'est pas elle qui distingue les districts.
+
+**Conclusion :** plus un district est **rural**, plus ses accidents sont **graves**. La segmentation retrouve, à l'échelle des districts, le résultat du Jour 3.
+
+## 24. Étape 3 — Le dashboard Streamlit
+
+### 24.1 Le principe
+
+Le dashboard est le **livrable final** : une page web qui présente les résultats à quelqu'un qui ne lit pas le code. Il est écrit dans `app/dashboard.py` et lancé automatiquement par le conteneur Docker `streamlit` sur **http://localhost:8501**.
+
+**Règle d'architecture :** le dashboard lit **uniquement la couche Gold**. Ces tables sont petites (37 à 416 lignes), donc l'affichage est instantané. Il ne relit jamais les 2 millions de lignes de la Silver.
+
+```mermaid
+flowchart LR
+    subgraph HDFS["HDFS — /lakehouse/gold/"]
+        A[("evolution_mensuelle<br/>156 lignes")]
+        B[("facteurs_gravite<br/>37 lignes")]
+        C[("segments_districts<br/>416 lignes")]
+        D[("pareto_districts<br/>416 lignes")]
+    end
+    HDFS -->|"load_gold_table()<br/>cache 60 s"| APP["app/dashboard.py"]
+    APP --> U["Navigateur<br/>localhost:8501"]
+```
+
+Deux caches évitent les recalculs à chaque clic :
+- **`@st.cache_resource`** démarre Spark **une seule fois** ;
+- **`@st.cache_data(ttl=60)`** lit chaque table Gold au plus une fois par minute.
+
+### 24.2 Le contenu
+
+**En haut, 4 indicateurs clés**, calculés à partir de la table Gold `evolution_mensuelle` : le nombre total d'accidents, le % d'accidents graves, l'évolution 2005 → 2017 et la part d'accidents graves en 2017.
+
+**Ensuite, 4 sections :**
+
+| Section | Table Gold | Graphique | Filtre |
+|---|---|---|---|
+| 1. Évolution dans le temps | `evolution_mensuelle` | Courbe + moyenne glissante, % graves | 🎚️ Slider de période |
+| 2. Facteurs aggravants | `facteurs_gravite` | Barres du risque relatif | ☑️ Choix des facteurs |
+| 3. Profils de districts | `segments_districts` | Nuage de points % rural × % graves | ☑️ Choix des segments + 🔍 recherche d'un district |
+| 4. Concentration (Pareto) | `pareto_districts` | Courbe de Pareto + tableau du top | 🎚️ Taille du top |
+
+**Chaque section contient :**
+- une phrase de conclusion (➡️) ;
+- un **`st.expander`** qui montre la **requête SQL** (ou le code PySpark) et la **justification statistique** : médiane plutôt que moyenne, moyenne glissante, risque relatif, tests χ² et Mann-Whitney, log1p, StandardScaler, silhouette.
+
+### 24.3 Respect des consignes
+
+| Consigne | Réalisation |
+|---|---|
+| Lire uniquement la couche Gold | Les 4 chemins commencent par `/lakehouse/gold/` |
+| Au moins un filtre interactif | 5 filtres (2 sliders, 2 multiselects, 1 selectbox) |
+| 3 à 4 visualisations Plotly | 5 graphiques |
+| Requête SQL et justification sous chaque analyse | 1 expander par section |
+
+## 25. Inventaire final de la couche Gold
+
+| Table | Lignes | Produite par | Utilisée dans le dashboard |
+|---|---|---|---|
+| `/lakehouse/gold/pareto_districts` | 416 | J3 — CTE + `DENSE_RANK` + cumul | Section 4 |
+| `/lakehouse/gold/evolution_mensuelle` | 156 | J3 — `LAG` + moyenne glissante | Indicateurs + section 1 |
+| `/lakehouse/gold/facteurs_gravite` | 37 | J3 — `STACK` + `ROW_NUMBER` | Section 2 |
+| `/lakehouse/gold/segments_districts` | 416 | J4 — K-Means | Section 3 |
+
+## 26. Synthèse finale et réponse à la problématique
+
+| Jour | Ce que nous avons fait | Résultat clé |
+|---|---|---|
+| **J1** | Copie sur HDFS + couche **Bronze** | 2 tables brutes et traçables (4,2 M lignes) |
+| **J2** | Nettoyage, jointure, couche **Silver** + garanties ACID | 1 table propre de 2 047 256 accidents |
+| **J3** | Analyses Spark SQL + 3 tables **Gold** | Nuit sans éclairage, 60 mph et campagne aggravent les accidents |
+| **J4** | Tests statistiques, K-Means, **dashboard** | Résultats **prouvés** (p < 0,05) et districts ruraux les plus graves |
+
+```mermaid
+flowchart LR
+    B["BRONZE<br/>2 CSV bruts<br/>4,2 M lignes"] --> S["SILVER<br/>1 table propre<br/>2 047 256 accidents"]
+    S --> G["GOLD<br/>4 tables de résultats<br/>~1 000 lignes"]
+    S --> T["Tests χ² et<br/>Mann-Whitney"]
+    G --> D["Dashboard<br/>Streamlit"]
+
+    style B fill:#cd7f32,color:#fff
+    style S fill:#c0c0c0,color:#000
+    style G fill:#ffd700,color:#000
+```
+
+**Réponse à la problématique : quels facteurs aggravent la sévérité des accidents ?**
+
+1. **Le manque de visibilité :** la nuit sans éclairage, un accident est **4 fois plus souvent mortel** qu'en plein jour. Cet effet reste visible **à vitesse égale** (heatmap du Jour 3) et il est **statistiquement prouvé** (χ², p ≈ 10⁻¹⁴¹).
+2. **La vitesse :** les routes à **60 mph** ont le plus fort taux d'accidents graves (22 %).
+3. **La campagne :** les accidents ruraux font plus de victimes (30 % font 2 victimes ou plus, contre 19 % en ville ; Mann-Whitney, p ≈ 0), et les **districts ruraux** sont les plus graves (19 % contre 13 % en ville).
+4. **Ce qui n'aggrave pas :** la **mauvaise météo** (pluie, neige, verglas) rend les accidents *moins* graves, car les conducteurs ralentissent. Les **jeunes conducteurs** n'ont pas d'accidents plus graves que les autres.
+
+**Recommandation :** les victimes sont réparties sur tout le territoire (58 % des districts pour 80 % des victimes), donc la prévention doit cibler les **facteurs de risque** plutôt que quelques « points noirs » : **éclairage** et **contrôle de la vitesse sur les routes rapides de campagne**.
+
+**Limites :** ce sont des **corrélations**, pas des causes prouvées. D'autres facteurs absents des données peuvent jouer (fatigue, alcool, délai d'arrivée des secours). Les effets mesurés sont **réels mais modérés** (V de Cramér = 0,058).
