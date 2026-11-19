@@ -704,6 +704,7 @@ Pour éviter l'\textbf{explosion N-à-M}, la table vehicles est résumée à \te
 \code{nb_vehicules_enregistres} & \code{count("*")} \\
 \code{age_moyen_vehicules} & \code{round(avg("age_of_vehicle"), 1)} \\
 \code{has_young_driver} & au moins un conducteur de 16 à 25 ans \\
+\code{sexe_conducteurs} & Homme(s) uniquement, Femme(s) uniquement ou Mixte (H + F) \\
 \code{victimes_par_vehicule} & \code{number_of_casualties / nb_vehicules_enregistres} \\
 \bottomrule
 \end{tabular}
@@ -896,7 +897,7 @@ Au Jour 3, nous analysons la table Silver avec \textbf{Spark SQL} et produisons 
   \node[box=3.0cm,right=of a1] (c) {Choix des indicateurs\\\scriptsize médiane, P90, P95};
   \node[gold=3.0cm,right=of g1] (t1) {pareto\_districts\\\scriptsize\normalfont 416 lignes};
   \node[gold=3.0cm,right=of g2] (t2) {evolution\_mensuelle\\\scriptsize\normalfont 156 lignes};
-  \node[gold=3.0cm,right=of g3] (t3) {facteurs\_gravite\\\scriptsize\normalfont 37 lignes};
+  \node[gold=3.0cm,right=of g3] (t3) {facteurs\_gravite\\\scriptsize\normalfont 40 lignes};
   \node[box=3.0cm,right=of o] (f) {11 fichiers $\rightarrow$ 1};
   \foreach \n in {a1,g1,g2,g3,o} \draw[arr] (s.east) -- (\n.west);
   \draw[arr] (a1)--(c); \draw[arr] (g1)--(t1); \draw[arr] (g2)--(t2); \draw[arr] (g3)--(t3); \draw[arr] (o)--(f);
@@ -1073,10 +1074,11 @@ C'est la table qui \textbf{répond directement à la problématique}. Pour chaqu
 
 \begin{lstlisting}[language=SparkSQL]
 WITH long_format AS (
-    SELECT STACK(8,
-             'Luminosite',        CAST(light_conditions    AS STRING),
-             'Limite de vitesse', CAST(speed_limit         AS STRING),
-             'Zone',              CAST(urban_or_rural_area AS STRING), ...
+    SELECT STACK(9,
+             'Luminosite',         CAST(light_conditions    AS STRING),
+             'Limite de vitesse',  CAST(speed_limit         AS STRING),
+             'Zone',               CAST(urban_or_rural_area AS STRING), ...
+             'Sexe du conducteur', CAST(sexe_conducteurs    AS STRING)
            ) AS (facteur, modalite),
            CASE WHEN accident_severity IN ('Serious','Fatal') THEN 1 ELSE 0 END AS est_grave
     FROM v_silver
@@ -1102,6 +1104,7 @@ Luminosité & Darkness - no lighting & 112\,644 & 24,27 & 4,39 & \textbf{1,59} \
 Limite de vitesse & 60 mph & 317\,469 & 22,46 & 3,15 & \textbf{1,47} \\
 Zone & Rural & 724\,757 & 18,85 & 2,35 & \textbf{1,23} \\
 Week-end & Oui & 498\,479 & 17,66 & 1,75 & 1,16 \\
+Sexe du conducteur & Homme(s) uniquement & 834\,216 & 17,01 & 1,67 & 1,11 \\
 Météo & Fine + high winds & 25\,816 & 17,07 & 1,86 & 1,12 \\
 Type de route & Single carriageway & 1\,527\,882 & 16,17 & 1,31 & 1,06 \\
 État de la route & Flood over 3cm deep & 2\,845 & 15,89 & 2,04 & 1,04 \\
@@ -1114,15 +1117,15 @@ Jeune conducteur & Non & 961\,160 & 15,17 & 1,39 & 0,99 \\
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}
-\begin{axis}[xbar, width=0.82\textwidth, height=8cm, xmin=0, xmax=1.8,
-  ytick={1,...,11}, yticklabel style={font=\footnotesize\sffamily},
-  yticklabels={{Rond-point},{Neige},{Pluie},{Urbain},{30 mph},{Jour},{Route simple},{Week-end},{Rural},{60 mph},{Nuit sans éclairage}},
-  bar width=9pt, enlarge y limits=0.06, axis lines*=left, xmajorgrids, grid style={black!10},
+\begin{axis}[xbar, width=0.82\textwidth, height=9cm, xmin=0, xmax=1.8,
+  ytick={1,...,13}, yticklabel style={font=\footnotesize\sffamily},
+  yticklabels={{Rond-point},{Neige},{Femmes seules},{Pluie},{Urbain},{30 mph},{Jour},{Route simple},{Hommes seuls},{Week-end},{Rural},{60 mph},{Nuit sans éclairage}},
+  bar width=9pt, enlarge y limits=0.05, axis lines*=left, xmajorgrids, grid style={black!10},
   xlabel={Risque relatif d'accident grave (1,0 = moyenne)}, xlabel style={font=\small},
   nodes near coords, nodes near coords style={font=\scriptsize}, /pgf/number format/precision=2]
-  \addplot[fill=okgreen!70,draw=none,bar shift=0pt] coordinates {(0.63,1) (0.71,2) (0.89,3) (0.87,4) (0.88,5) (0.93,6)};
-  \addplot[fill=dangerred!80,draw=none,bar shift=0pt] coordinates {(1.06,7) (1.16,8) (1.23,9) (1.47,10) (1.59,11)};
-  \draw[dashed,thick,black!60] (axis cs:1,0.3) -- (axis cs:1,11.7);
+  \addplot[fill=okgreen!70,draw=none,bar shift=0pt] coordinates {(0.63,1) (0.71,2) (0.75,3) (0.89,4) (0.87,5) (0.88,6) (0.93,7)};
+  \addplot[fill=dangerred!80,draw=none,bar shift=0pt] coordinates {(1.06,8) (1.11,9) (1.16,10) (1.23,11) (1.47,12) (1.59,13)};
+  \draw[dashed,thick,black!60] (axis cs:1,0.3) -- (axis cs:1,13.7);
 \end{axis}
 \end{tikzpicture}
 \caption{Risque relatif par modalité : en rouge les modalités aggravantes, en vert les protectrices}
@@ -1135,6 +1138,31 @@ Jeune conducteur & Non & 961\,160 & 15,17 & 1,39 & 0,99 \\
   \item \textbf{La campagne} : 19 \% d'accidents graves, contre 13 \% en ville.
   \item \textbf{Surprises :} la pluie, la neige et le verglas rendent les accidents \emph{moins} graves (les conducteurs ralentissent) ; les ronds-points sont les lieux les moins graves ; les jeunes conducteurs n'ont pas d'accidents plus graves.
 \end{itemize}
+\end{keybox}
+
+\subsection{Le sexe du conducteur}
+
+À partir de la table vehicles, chaque accident est classé selon le sexe des conducteurs impliqués (colonne \code{sexe_conducteurs} créée au J2). Ce facteur est ajouté comme neuvième ligne du \code{STACK}.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l r r r r@{}}
+\toprule
+\headrow \hd{Conducteurs impliqués} & \hd{Accidents} & \hd{\% graves} & \hd{\% mortels} & \hd{Risque rel.} \\
+\midrule
+Homme(s) uniquement & 834\,216 & 17,01 & 1,67 & \textbf{1,11} \\
+Femme(s) uniquement & 294\,656 & 11,53 & 0,66 & 0,75 \\
+Mixte (H + F) & 237\,781 & 11,18 & 0,93 & 0,73 \\
+\bottomrule
+\end{tabular}
+\caption{Gravité des accidents selon le sexe des conducteurs}
+\end{table}
+
+\begin{keybox}
+Quand seuls des \textbf{hommes} conduisent, 17 \% des accidents sont graves, contre 11,5 \% quand seules des \textbf{femmes} conduisent. Les accidents mortels sont \textbf{2,5 fois plus fréquents} (1,67 \% contre 0,66 \%).
+
+\textbf{Attention :} cela ne veut pas dire que les hommes conduisent « moins bien ». Une explication probable est qu'ils roulent plus souvent à moto, la nuit et sur les routes rapides de campagne, qui sont justement les facteurs aggravants identifiés plus haut. Ce résultat est une \textbf{corrélation}, pas une cause.
 \end{keybox}
 
 \subsection{Vérification : la nuit aggrave-t-elle à vitesse égale ?}
@@ -1422,13 +1450,13 @@ En ville, les accidents sont \textbf{nombreux mais peu graves} (on y roule lente
 
 \subsection{Architecture}
 
-Le dashboard (\code{app/dashboard.py}, servi sur le port 8501) est le livrable final. Il respecte une règle d'architecture stricte : il lit \textbf{uniquement la couche Gold}. Ces tables étant petites (37 à 416 lignes), l'affichage est instantané.
+Le dashboard (\code{app/dashboard.py}, servi sur le port 8501) est le livrable final. Il respecte une règle d'architecture stricte : il lit \textbf{uniquement la couche Gold}. Ces tables étant petites (40 à 416 lignes), l'affichage est instantané.
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[node distance=0.3cm]
   \node[gold=3.2cm] (a) {evolution\_mensuelle\\\scriptsize\normalfont 156 lignes};
-  \node[gold=3.2cm,below=of a] (b) {facteurs\_gravite\\\scriptsize\normalfont 37 lignes};
+  \node[gold=3.2cm,below=of a] (b) {facteurs\_gravite\\\scriptsize\normalfont 40 lignes};
   \node[gold=3.2cm,below=of b] (c) {segments\_districts\\\scriptsize\normalfont 416 lignes};
   \node[gold=3.2cm,below=of c] (d) {pareto\_districts\\\scriptsize\normalfont 416 lignes};
   \begin{scope}[on background layer]
@@ -1442,11 +1470,11 @@ Le dashboard (\code{app/dashboard.py}, servi sur le port 8501) est le livrable f
 \caption{Le dashboard ne lit que les tables Gold}
 \end{figure}
 
-Deux mécanismes de cache évitent les recalculs : \code{@st.cache_resource} démarre Spark une seule fois, et \code{@st.cache_data(ttl=60)} lit chaque table au plus une fois par minute.
+Deux mécanismes de cache évitent les recalculs : \code{@st.cache_resource} démarre Spark une seule fois, et \code{@st.cache_data(ttl=60)} lit chaque table au plus une fois par minute. Si la JVM Spark s'arrête (manque de mémoire), \code{get_spark()} le détecte et recrée automatiquement la session.
 
 \subsection{Contenu}
 
-En tête de page, \textbf{quatre indicateurs clés} sont calculés à partir de la table Gold : nombre total d'accidents, part d'accidents graves, évolution 2005--2017 et part d'accidents graves en 2017.
+Le dashboard est organisé en \textbf{pages}, accessibles par un menu latéral. La page d'accueil affiche \textbf{quatre indicateurs clés} : nombre total d'accidents, part d'accidents graves, évolution 2005--2017 et part d'accidents graves en 2017.
 
 \begin{table}[H]
 \centering
@@ -1454,18 +1482,67 @@ En tête de page, \textbf{quatre indicateurs clés} sont calculés à partir de 
 \rowcolors{2}{rowgray}{white}
 \begin{tabularx}{\textwidth}{@{}l l X l@{}}
 \toprule
-\headrow \hd{Section} & \hd{Table Gold} & \hd{Visualisation} & \hd{Filtre} \\
+\headrow \hd{Page} & \hd{Table Gold} & \hd{Visualisation} & \hd{Filtre} \\
 \midrule
-1. Évolution & \code{evolution_mensuelle} & Courbe et moyenne glissante, \% graves & Curseur de période \\
-2. Facteurs & \code{facteurs_gravite} & Barres du risque relatif & Choix des facteurs \\
-3. Segments & \code{segments_districts} & Nuage de points \% rural $\times$ \% graves & Segments + recherche \\
-4. Pareto & \code{pareto_districts} & Courbe de Pareto et top des districts & Taille du top \\
+Vue d'ensemble & \code{evolution_mensuelle} & Courbe et moyenne glissante, \% graves & Curseur de période \\
+Facteurs de gravité & \code{facteurs_gravite} & Barres du risque relatif (dont le sexe) & Choix des facteurs \\
+Territoires & \code{segments_districts} & Nuage de points \% rural $\times$ \% graves & Segments + recherche \\
+Carte & \code{segments_districts} & Carte des régions et des districts & Vue, indicateur, segments \\
+Concentration & \code{pareto_districts} & Courbe de Pareto et top des districts & Taille du top \\
+Méthodologie & — & Pipeline et inventaire Gold & — \\
 \bottomrule
 \end{tabularx}
 \caption{Organisation du dashboard}
 \end{table}
 
-Chaque section se termine par une phrase de conclusion et un \code{st.expander} « Requête SQL \& justification statistique » qui affiche la requête ayant produit la table Gold et justifie les indicateurs retenus (médiane, moyenne glissante, risque relatif, tests, log1p, silhouette).
+Chaque page propose un \code{st.expander} « Requête \& justification statistique » qui affiche la requête ayant produit la table Gold et justifie les indicateurs retenus (médiane, moyenne glissante, risque relatif, tests, log1p, silhouette).
+
+\subsection{Carte du Royaume-Uni}
+
+Pour rendre les résultats plus visuels, une page \textbf{Carte} place les districts sur le territoire. Au J4, la table \code{segments_districts} reçoit la \textbf{position médiane} des accidents de chaque district ; ces colonnes ne servent pas au K-Means, seulement à l'affichage :
+
+\begin{lstlisting}[language=Python]
+F.round(F.percentile_approx("latitude", 0.5), 4).alias("latitude"),
+F.round(F.percentile_approx("longitude", 0.5), 4).alias("longitude"),
+\end{lstlisting}
+
+Le dashboard rattache ensuite chaque district à l'une des \textbf{12 régions} du Royaume-Uni (contours NUTS 1 d'Eurostat) par un test « point dans polygone ». Le taux d'une région est la moyenne des taux de ses districts, \textbf{pondérée par le nombre d'accidents}, pour qu'un petit district ne pèse pas autant que Birmingham. La carte propose deux vues :
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[b]{0.47\textwidth}
+  \centering
+  \includegraphics[height=8.6cm]{carte_regions.png}\\[2pt]
+  {\small\sffamily (a) Vue Régions : \% d'accidents graves ou mortels}
+\end{minipage}\hfill
+\begin{minipage}[b]{0.47\textwidth}
+  \centering
+  \includegraphics[height=8.6cm]{carte_districts.png}\\[2pt]
+  {\small\sffamily (b) Vue Districts : segments K-Means, taille = accidents}
+\end{minipage}
+\caption{Page Carte du dashboard (l'Irlande du Nord, en gris, n'est pas dans le dataset)}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[xbar, width=0.78\textwidth, height=7.2cm, xmin=0, xmax=21,
+  ytick={1,...,11}, yticklabel style={font=\footnotesize\sffamily},
+  yticklabels={{Londres},{Midlands de l'Ouest},{Nord-Est},{Sud-Ouest},{Pays de Galles},{Sud-Est},{Midlands de l'Est},{Nord-Ouest},{Est de l'Angleterre},{Yorkshire-et-Humber},{Écosse}},
+  bar width=8pt, enlarge y limits=0.06, axis lines*=left, xmajorgrids, grid style={black!10},
+  xlabel={\% d'accidents graves ou mortels}, xlabel style={font=\small},
+  nodes near coords, nodes near coords style={font=\scriptsize,
+    /pgf/number format/.cd, fixed, fixed zerofill, precision=1, use comma}]
+  \addplot[fill=dangerred!45,draw=none,bar shift=0pt] coordinates {(11.7,1) (13.9,2) (14.6,3) (14.8,4) (15.8,5) (16.0,6) (16.0,7) (16.0,8) (16.3,9) (16.7,10)};
+  \addplot[fill=dangerred!90,draw=none,bar shift=0pt] coordinates {(18.9,11)};
+\end{axis}
+\end{tikzpicture}
+\caption{Classement des régions selon la gravité des accidents}
+\end{figure}
+
+\begin{keybox}
+La carte confirme les résultats précédents : l'\textbf{Écosse}, très rurale, a le plus fort taux d'accidents graves (18,9 \%), alors que \textbf{Londres}, très urbaine, a le plus faible (11,7 \%). Sur la vue Districts, les districts \textcolor{blue!70!black}{\bfseries urbains} se regroupent autour des grandes villes (Londres, Birmingham, Manchester, Leeds, Glasgow), tandis que les districts \textcolor{orange!85!black}{\bfseries ruraux} couvrent l'Écosse, le Pays de Galles et le Sud-Ouest.
+\end{keybox}
 
 \begin{table}[H]
 \centering
@@ -1474,10 +1551,10 @@ Chaque section se termine par une phrase de conclusion et un \code{st.expander} 
 \toprule
 \headrow \hd{Consigne} & \hd{Réalisation} \\
 \midrule
-Lire uniquement la couche Gold & Les 4 chemins commencent par \code{/lakehouse/gold/} \\
-Au moins un filtre interactif & 5 filtres (2 curseurs, 2 sélections multiples, 1 liste) \\
-3 à 4 visualisations Plotly & 5 graphiques \\
-Requête SQL et justification sous chaque analyse & Un expander par section \\
+Lire uniquement la couche Gold & 4 tables, toutes sous \code{/lakehouse/gold/} \\
+Au moins un filtre interactif & 8 filtres (curseurs, sélections multiples, listes) \\
+3 à 4 visualisations Plotly & 8 graphiques, dont 2 cartes \\
+Requête SQL et justification sous chaque analyse & Un expander par page \\
 \bottomrule
 \end{tabularx}
 \caption{Respect des consignes du dashboard}
@@ -1511,7 +1588,8 @@ Requête SQL et justification sous chaque analyse & Un expander par section \\
 \begin{enumerate}
   \item \textbf{Le manque de visibilité :} la nuit sans éclairage, un accident est \textbf{4 fois plus souvent mortel} qu'en plein jour. L'effet persiste à vitesse égale et il est statistiquement prouvé ($\chi^2$, $p \approx 10^{-141}$).
   \item \textbf{La vitesse :} les routes à 60 mph ont le plus fort taux d'accidents graves (22 \%).
-  \item \textbf{La campagne :} les accidents ruraux font plus de victimes (Mann-Whitney, $p \approx 0$), et les districts ruraux sont les plus graves (19 \% contre 13 \% en ville).
+  \item \textbf{La campagne :} les accidents ruraux font plus de victimes (Mann-Whitney, $p \approx 0$), et les districts ruraux sont les plus graves (19 \% contre 13 \% en ville). La carte le montre : l'Écosse est la région la plus grave (18,9 \%), Londres la moins grave (11,7 \%).
+  \item \textbf{Le profil du conducteur :} les accidents impliquant uniquement des hommes sont plus graves (17 \% contre 11,5 \% pour les femmes), probablement parce qu'ils sont plus exposés aux facteurs ci-dessus.
   \item \textbf{Ce qui n'aggrave pas :} la mauvaise météo rend les accidents \emph{moins} graves (les conducteurs ralentissent), et les jeunes conducteurs n'ont pas d'accidents plus graves.
 \end{enumerate}
 \end{keybox}
@@ -1530,7 +1608,8 @@ Les victimes étant réparties sur tout le territoire (58 \% des districts pour 
 \begin{itemize}
   \item \textbf{Corrélation n'est pas causalité :} d'autres facteurs absents des données peuvent jouer (fatigue, alcool, délai d'arrivée des secours).
   \item \textbf{Effets modérés :} les facteurs identifiés augmentent le risque sans tout expliquer (V de Cramér = 0,058).
-  \item \textbf{Couverture partielle des véhicules :} seuls 68 \% des accidents ont été rapprochés d'un véhicule, ce qui limite l'analyse de l'âge du conducteur.
+  \item \textbf{Couverture partielle des véhicules :} seuls 68 \% des accidents ont été rapprochés d'un véhicule, ce qui limite l'analyse de l'âge et du sexe du conducteur.
+  \item \textbf{Facteurs liés entre eux :} l'écart entre hommes et femmes peut venir du type de véhicule ou du type de route, et pas du sexe lui-même.
   \item \textbf{Perspectives :} un modèle de régression logistique permettrait de mesurer l'effet de chaque facteur \emph{toutes choses égales par ailleurs}, et l'ajout des données de trafic permettrait de calculer un taux d'accidents par kilomètre parcouru.
 \end{itemize}
 
@@ -1548,10 +1627,10 @@ Les victimes étant réparties sur tout le territoire (58 \% des districts pour 
 \toprule
 \headrow \hd{Table} & \hd{Lignes} & \hd{Technique} & \hd{Dashboard} \\
 \midrule
-\code{/lakehouse/gold/pareto_districts} & 416 & CTE, DENSE\_RANK, cumul OVER & Section 4 \\
-\code{/lakehouse/gold/evolution_mensuelle} & 156 & LAG, moyenne glissante & Indicateurs, section 1 \\
-\code{/lakehouse/gold/facteurs_gravite} & 37 & STACK, ROW\_NUMBER & Section 2 \\
-\code{/lakehouse/gold/segments_districts} & 416 & K-Means & Section 3 \\
+\code{/lakehouse/gold/pareto_districts} & 416 & CTE, DENSE\_RANK, cumul OVER & Concentration \\
+\code{/lakehouse/gold/evolution_mensuelle} & 156 & LAG, moyenne glissante & Vue d'ensemble \\
+\code{/lakehouse/gold/facteurs_gravite} & 40 & STACK, ROW\_NUMBER & Facteurs de gravité \\
+\code{/lakehouse/gold/segments_districts} & 416 & K-Means, position médiane & Territoires, Carte \\
 \bottomrule
 \end{tabularx}
 \caption{Tables Gold produites}
