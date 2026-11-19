@@ -1,5 +1,7 @@
+import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -117,11 +119,38 @@ section[data-testid="stSidebar"] { border-right: 1px solid var(--border); }
 # ==============================================================================
 # Données : couche Gold uniquement
 # ==============================================================================
-@st.cache_resource
-def get_spark():
+def _build_spark():
     return (SparkSession.builder.appName("StreamlitGoldReader")
             .config("spark.driver.memory", "512m").config("spark.ui.enabled", "false")
             .getOrCreate())
+
+
+def _spark_alive(spark) -> bool:
+    try:
+        return not spark.sparkContext._jsc.sc().isStopped()
+    except Exception:
+        return False
+
+
+@st.cache_resource
+def _cached_spark():
+    return _build_spark()
+
+
+def get_spark():
+    """Renvoie une session Spark vivante ; si la JVM est morte, on la recrée."""
+    spark = _cached_spark()
+    if _spark_alive(spark):
+        return spark
+    # JVM morte (OOM, heartbeat perdu…) : on oublie l'ancienne session et on relance
+    from pyspark import SparkContext
+    _cached_spark.clear()
+    SparkContext._active_spark_context = None
+    SparkContext._gateway = None
+    SparkContext._jvm = None
+    SparkSession._instantiatedSession = None
+    SparkSession._activeSession = None
+    return _cached_spark()
 
 
 @st.cache_data(ttl=60, show_spinner="Lecture des tables Gold…")
@@ -198,6 +227,62 @@ def segment_color(name: str) -> str:
 
 def short_segment(name: str) -> str:
     return name.split(":")[0].strip()
+
+
+# ==============================================================================
+# Géographie : régions du Royaume-Uni (NUTS 1, Eurostat GISCO 2016)
+# ==============================================================================
+@st.cache_data
+def load_regions() -> dict:
+    return json.loads((APP_DIR / "uk_regions.geojson").read_text(encoding="utf-8"))
+
+
+def _polygons(geom: dict) -> list:
+    return [geom["coordinates"]] if geom["type"] == "Polygon" else geom["coordinates"]
+
+
+def _in_ring(lon: float, lat: float, ring: list) -> bool:
+    """Test du rayon (ray casting) : le point est-il dans le polygone ?"""
+    r = np.asarray(ring)
+    x, y = r[:, 0], r[:, 1]
+    x2, y2 = np.roll(x, -1), np.roll(y, -1)
+    traverse = (y > lat) != (y2 > lat)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        x_inter = x + (lat - y) * (x2 - x) / (y2 - y)
+    return np.count_nonzero(traverse & (lon < x_inter)) % 2 == 1
+
+
+def region_of(lon: float, lat: float, geo: dict) -> str:
+    """Région contenant le point ; à défaut (point côtier), la région la plus proche."""
+    best, best_d = None, np.inf
+    for f in geo["features"]:
+        for poly in _polygons(f["geometry"]):
+            if _in_ring(lon, lat, poly[0]) and not any(_in_ring(lon, lat, h) for h in poly[1:]):
+                return f["properties"]["region"]
+            ring = np.asarray(poly[0])
+            d = np.min(np.hypot(ring[:, 0] - lon, ring[:, 1] - lat))
+            if d < best_d:
+                best, best_d = f["properties"]["region"], d
+    return best
+
+
+@st.cache_data
+def districts_with_region(df: pd.DataFrame) -> pd.DataFrame:
+    geo = load_regions()
+    out = df.copy()
+    out["region"] = [region_of(lo, la, geo) for lo, la in zip(out["longitude"], out["latitude"])]
+    return out
+
+
+MAP_METRICS = {
+    "pct_graves_mortels": "% graves ou mortels",
+    "pct_nuit": "% de nuit",
+    "pct_rural": "% en zone rurale",
+    "pct_vitesse_60_plus": "% à 60 mph ou plus",
+    "nb_accidents": "Nombre d'accidents",
+}
+SEQ_REDS = [[0, "#f8d3cb"], [0.25, "#f5ad9e"], [0.5, "#ee7f6b"], [0.75, "#d23f36"], [1, "#8f1d22"]]
+MAP_GEOS = dict(fitbounds="geojson", visible=False, projection_type="mercator", bgcolor="rgba(0,0,0,0)")
 
 
 # ==============================================================================
@@ -408,6 +493,124 @@ KMeans(n_clusters=3, random_state=42, n_init=10).fit_predict(X_scaled)""",
             "k = 3 (silhouette 0,25) ajoute un segment mixte plus utile que k = 2 (0,34).", language="python")
 
 
+def page_map():
+    page_head("Gold · segments_districts", "Carte du Royaume-Uni")
+
+    if not {"latitude", "longitude"} <= set(df_seg.columns):
+        st.info("Coordonnées absentes de la table Gold : relancez l'exercice 2.1 du notebook J4.",
+                icon=":material/info:")
+        return
+
+    geo = load_regions()
+    seg = districts_with_region(df_seg)
+
+    f1, f2 = st.columns([1, 2], gap="medium")
+    vue = f1.segmented_control("Vue", ["Régions", "Districts"], default="Régions",
+                               label_visibility="collapsed") or "Régions"
+
+    c1, c2 = st.columns([3, 2], gap="medium")
+
+    if vue == "Régions":
+        metric = f2.selectbox("Indicateur", list(MAP_METRICS), format_func=MAP_METRICS.get,
+                              label_visibility="collapsed")
+        # Agrégation pondérée par le nombre d'accidents (un district de 30 000 accidents
+        # pèse plus qu'un district de 300)
+        w = seg.assign(**{c: seg[c] * seg["nb_accidents"] for c in MAP_METRICS if c != "nb_accidents"})
+        reg = w.groupby("region").agg(**{c: (c, "sum") for c in MAP_METRICS},
+                                      nb_districts=("district", "count")).reset_index()
+        for c in MAP_METRICS:
+            if c != "nb_accidents":
+                reg[c] = reg[c] / reg["nb_accidents"]
+        is_count = metric == "nb_accidents"
+        fmt, suffix = (":,.0f", "") if is_count else (":.1f", " %")
+        absentes = [f["properties"]["region"] for f in geo["features"]
+                    if f["properties"]["region"] not in set(reg["region"])]
+
+        with c1, st.container(border=True):
+            chart_title("public", f"{MAP_METRICS[metric]} par région")
+            fig = go.Figure()
+            fig.add_choropleth(
+                geojson=geo, featureidkey="properties.region", locations=reg["region"], z=reg[metric],
+                colorscale=SEQ_REDS, marker=dict(line=dict(color="white", width=1)),
+                colorbar=dict(ticksuffix=suffix, thickness=10, len=0.55, outlinewidth=0, x=0.02, xanchor="left",
+                              tickfont=dict(size=11)),
+                customdata=reg[["nb_accidents", "nb_districts"]],
+                hovertemplate=f"<b>%{{location}}</b><br>{MAP_METRICS[metric]} : <b>%{{z{fmt}}}{suffix}</b><br>"
+                              "%{customdata[0]:,.0f} accidents · %{customdata[1]} districts<extra></extra>")
+            if absentes:
+                fig.add_choropleth(
+                    geojson=geo, featureidkey="properties.region", locations=absentes, z=[0] * len(absentes),
+                    colorscale=[[0, "rgba(128,128,128,0.18)"], [1, "rgba(128,128,128,0.18)"]], showscale=False,
+                    marker=dict(line=dict(color="white", width=1)),
+                    hovertemplate="<b>%{location}</b><br>Hors périmètre du dataset<extra></extra>")
+            fig.update_geos(**MAP_GEOS)
+            fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+            show(fig, height=620)
+
+        with c2, st.container(border=True):
+            chart_title("format_list_numbered", "Classement des régions")
+            r = reg.sort_values(metric)
+            fig = go.Figure(go.Bar(
+                x=r[metric], y=r["region"], orientation="h",
+                marker=dict(color=r[metric], colorscale=SEQ_REDS, cornerradius=4),
+                text=[fr_int(v) if is_count else f"{fr_num(v)} %" for v in r[metric]],
+                textposition="outside", cliponaxis=False,
+                hovertemplate=f"<b>%{{y}}</b> · %{{x{fmt}}}{suffix}<extra></extra>"))
+            fig.update_xaxes(visible=False, range=[0, r[metric].max() * 1.22])
+            fig.update_yaxes(showgrid=False)
+            show(fig, height=440)
+            if absentes:
+                st.caption(f"{', '.join(absentes)} : pas de données dans le dataset (Grande-Bretagne uniquement).")
+
+    else:
+        ordre = sorted(seg["segment"].unique(),
+                       key=lambda s: (not s.startswith("Urbain"), s.startswith("Rural")))
+        choix = f2.segmented_control("Segments", ordre, selection_mode="multi", default=ordre,
+                                     format_func=short_segment, label_visibility="collapsed") or []
+
+        with c1, st.container(border=True):
+            chart_title("bubble_chart", "Districts par segment · taille = nombre d'accidents")
+            fig = go.Figure()
+            fig.add_choropleth(
+                geojson=geo, featureidkey="properties.region",
+                locations=[f["properties"]["region"] for f in geo["features"]], z=[0] * len(geo["features"]),
+                colorscale=[[0, "rgba(128,128,128,0.10)"], [1, "rgba(128,128,128,0.10)"]], showscale=False,
+                marker=dict(line=dict(color="rgba(128,128,128,0.55)", width=0.8)), hoverinfo="skip")
+            for s in choix:
+                d = seg[seg["segment"] == s]
+                fig.add_scattergeo(
+                    lon=d["longitude"], lat=d["latitude"], mode="markers", name=short_segment(s),
+                    marker=dict(color=segment_color(s), opacity=0.8, size=d["nb_accidents"], sizemode="area",
+                                sizemin=4, sizeref=2.0 * seg["nb_accidents"].max() / (30 ** 2),
+                                line=dict(color="white", width=0.7)),
+                    customdata=d[["district", "region", "nb_accidents", "pct_graves_mortels"]],
+                    hovertemplate="<b>%{customdata[0]}</b> · %{customdata[1]}<br>"
+                                  "%{customdata[2]:,.0f} accidents · %{customdata[3]:.1f} % graves<extra></extra>")
+            fig.update_geos(**MAP_GEOS)
+            fig.update_layout(margin=dict(l=0, r=0, t=0, b=0),
+                              legend=dict(x=0.02, y=0.98, xanchor="left", yanchor="top", orientation="v"))
+            show(fig, height=620)
+
+        with c2:
+            for s in [s for s in ordre if s in choix]:
+                d = seg[seg["segment"] == s]
+                top = d["region"].value_counts()
+                st.markdown(
+                    f'<div class="seg"><div class="n"><span class="dot" style="background:{segment_color(s)}">'
+                    f'</span>{short_segment(s)}</div><div class="m">{len(d)} districts · '
+                    f'<b>{fr_num(d["pct_graves_mortels"].median())} %</b> graves<br>'
+                    f'Surtout : {", ".join(top.index[:3])}</div></div>', unsafe_allow_html=True)
+
+    sql_box("""-- J4 : position de chaque district = médiane des coordonnées de ses accidents
+F.round(F.percentile_approx("latitude", 0.5), 4).alias("latitude"),
+F.round(F.percentile_approx("longitude", 0.5), 4).alias("longitude")
+
+-- Dashboard : district -> région (test point-dans-polygone, régions NUTS 1),
+-- puis % régional = moyenne des % des districts pondérée par nb_accidents""",
+            "La médiane résiste aux accidents mal géolocalisés. La moyenne pondérée évite qu'un petit "
+            "district rural pèse autant que Birmingham dans le taux de sa région.")
+
+
 def page_pareto():
     page_head("Gold · pareto_districts", "Concentration géographique")
 
@@ -501,7 +704,8 @@ nav = st.navigation({
     "Analyse": [
         st.Page(page_overview, title="Vue d'ensemble", icon=":material/space_dashboard:", default=True),
         st.Page(page_factors, title="Facteurs de gravité", icon=":material/warning:", url_path="facteurs"),
-        st.Page(page_territories, title="Territoires", icon=":material/map:", url_path="territoires"),
+        st.Page(page_territories, title="Territoires", icon=":material/scatter_plot:", url_path="territoires"),
+        st.Page(page_map, title="Carte", icon=":material/map:", url_path="carte"),
         st.Page(page_pareto, title="Concentration", icon=":material/stacked_line_chart:", url_path="pareto"),
     ],
     "Projet": [
