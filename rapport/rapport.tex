@@ -1,0 +1,1588 @@
+% ==============================================================================
+%  Rapport — Data Lakehouse sur HDFS : sévérité des accidents de la route (UK)
+%  Compilation : pdfLaTeX (Overleaf : Menu > Compiler > pdfLaTeX)
+% ==============================================================================
+\documentclass[11pt,a4paper]{report}
+
+% ------------------------------------------------------------------------------
+% Encodage, langue, polices
+% ------------------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\frenchsetup{StandardItemLabels=true}
+\usepackage{lmodern}
+\usepackage[default,semibold]{sourcesanspro}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+
+% ------------------------------------------------------------------------------
+% Mise en page
+% ------------------------------------------------------------------------------
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.2cm,right=2.2cm,headheight=15pt]{geometry}
+\usepackage{setspace}
+\setstretch{1.12}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+% ------------------------------------------------------------------------------
+% Couleurs
+% ------------------------------------------------------------------------------
+\usepackage[table]{xcolor}
+\definecolor{primary}{HTML}{1F3A5F}
+\definecolor{primarylight}{HTML}{E8EEF5}
+\definecolor{accent}{HTML}{C8963E}
+\definecolor{bronzec}{HTML}{CD7F32}
+\definecolor{silverc}{HTML}{9EA3A8}
+\definecolor{goldc}{HTML}{D4AF37}
+\definecolor{rowgray}{HTML}{F4F6F8}
+\definecolor{codebg}{HTML}{F6F8FA}
+\definecolor{okgreen}{HTML}{2E7D32}
+\definecolor{warnorange}{HTML}{E08E0B}
+\definecolor{dangerred}{HTML}{C62828}
+\colorlet{heat}{dangerred}
+
+% ------------------------------------------------------------------------------
+% Tableaux, figures, graphiques
+% ------------------------------------------------------------------------------
+\usepackage{booktabs,tabularx,array,multirow}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\emergencystretch=2em
+\captionsetup{font=small,labelfont={bf,color=primary},justification=centering}
+\renewcommand{\arraystretch}{1.3}
+\setlength{\aboverulesep}{0pt}
+\setlength{\belowrulesep}{0pt}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
+\newcommand{\hd}[1]{\textcolor{white}{\bfseries #1}}
+\newcommand{\headrow}{\rowcolor{primary}}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,backgrounds,calc,shadows,babel}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\pgfkeys{/pgf/number format/.cd,use comma,1000 sep={\,}}
+
+% ------------------------------------------------------------------------------
+% Encadrés
+% ------------------------------------------------------------------------------
+\usepackage[most]{tcolorbox}
+\newtcolorbox{keybox}[1][Résultat clé]{enhanced,breakable,colback=primarylight,colframe=primary,
+  boxrule=0pt,leftrule=4pt,arc=2pt,fonttitle=\bfseries\sffamily,coltitle=primary,
+  colbacktitle=primarylight,title=#1,toptitle=6pt,bottomtitle=0pt,before skip=10pt,after skip=10pt}
+\newtcolorbox{infobox}[1][À retenir]{enhanced,breakable,colback=accent!8,colframe=accent,
+  boxrule=0pt,leftrule=4pt,arc=2pt,fonttitle=\bfseries\sffamily,coltitle=accent!70!black,
+  colbacktitle=accent!8,title=#1,toptitle=6pt,bottomtitle=0pt,before skip=10pt,after skip=10pt}
+\newtcolorbox{warnbox}[1][Point de vigilance]{enhanced,breakable,colback=warnorange!8,colframe=warnorange,
+  boxrule=0pt,leftrule=4pt,arc=2pt,fonttitle=\bfseries\sffamily,coltitle=warnorange!70!black,
+  colbacktitle=warnorange!8,title=#1,toptitle=6pt,bottomtitle=0pt,before skip=10pt,after skip=10pt}
+
+% Tuile de chiffre clé
+\newcommand{\kpi}[2]{%
+  \begin{tcolorbox}[enhanced,colback=white,colframe=primary!15,boxrule=0.6pt,arc=3pt,
+    width=\linewidth,halign=center,valign=center,height=2.3cm,left=2pt,right=2pt]
+    {\color{primary}\fontsize{19}{22}\selectfont\bfseries #1}\\[2pt]
+    {\footnotesize\color{black!65} #2}
+  \end{tcolorbox}}
+
+% ------------------------------------------------------------------------------
+% Code
+% ------------------------------------------------------------------------------
+\usepackage{listings}
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=leftline,framerule=3pt,rulecolor=\color{accent},
+  keywordstyle=\color{primary}\bfseries,
+  commentstyle=\color{black!50}\itshape,
+  stringstyle=\color{okgreen!80!black},
+  breaklines=true,columns=fullflexible,keepspaces=true,
+  xleftmargin=10pt,framexleftmargin=7pt,
+  aboveskip=8pt,belowskip=8pt,showstringspaces=false,
+  literate={é}{{\'e}}1 {è}{{\`e}}1 {à}{{\`a}}1 {ç}{{\c c}}1 {ê}{{\^e}}1
+           {ô}{{\^o}}1 {É}{{\'E}}1 {û}{{\^u}}1 {î}{{\^\i}}1
+}
+\lstdefinelanguage{SparkSQL}[]{SQL}{
+  morekeywords={WITH,OVER,PARTITION,ROWS,BETWEEN,UNBOUNDED,PRECEDING,CURRENT,ROW,
+    STACK,PERCENTILE_APPROX,SKEWNESS,STDDEV,DENSE_RANK,ROW_NUMBER,LAG,DATE_TRUNC,
+    CROSS,CAST,ROUND,HAVING,CASE,WHEN,THEN,ELSE,END,IN,STRING},
+  sensitive=false
+}
+\lstset{style=code}
+
+% Code en ligne (les underscores sont conservés tels quels)
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+
+% ------------------------------------------------------------------------------
+% Titres de chapitres et sections
+% ------------------------------------------------------------------------------
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\sffamily\color{primary}}
+  {\large\bfseries\color{accent}\MakeUppercase{\chaptertitlename}\ \thechapter}
+  {4pt}
+  {\Huge\bfseries}
+  [\vspace{4pt}{\color{accent}\titlerule[1.6pt]}]
+\titlespacing*{\chapter}{0pt}{-10pt}{22pt}
+\titleformat{\section}{\Large\bfseries\sffamily\color{primary}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{primary!85}}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily\color{accent!80!black}}{}{0em}{}
+\titlespacing*{\section}{0pt}{16pt}{6pt}
+\titlespacing*{\subsection}{0pt}{12pt}{4pt}
+
+% ------------------------------------------------------------------------------
+% En-têtes et pieds de page
+% ------------------------------------------------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\fancyhead[L]{\small\color{black!55}\sffamily Data Lakehouse — UK Road Safety}
+\fancyhead[R]{\small\color{black!55}\sffamily\leftmark}
+\fancyfoot[C]{\small\color{primary}\sffamily\bfseries\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{accent}\leaders\hrule height \headrulewidth\hfill}}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\color{primary}\sffamily\bfseries\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+% ------------------------------------------------------------------------------
+% Listes, liens, table des matières
+% ------------------------------------------------------------------------------
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt,leftmargin=*}
+\setlist[itemize,1]{label={\color{accent}\textbullet}}
+\usepackage{tocloft}
+\renewcommand{\cftchapfont}{\bfseries\sffamily\color{primary}}
+\renewcommand{\cftchappagefont}{\bfseries\sffamily\color{primary}}
+\renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
+\setlength{\cftbeforechapskip}{8pt}
+\usepackage[hidelinks]{hyperref}
+\hypersetup{pdftitle={Data Lakehouse sur HDFS — Sévérité des accidents au Royaume-Uni},
+  pdfauthor={Akram},pdfsubject={TP fil rouge Big Data — IPSSI}}
+
+% ------------------------------------------------------------------------------
+% Styles TikZ
+% ------------------------------------------------------------------------------
+\tikzset{
+  box/.style={draw=primary!70,fill=white,rounded corners=3pt,align=center,
+    font=\footnotesize\sffamily,inner sep=5pt,minimum height=1.05cm,text width=#1},
+  box/.default=2.6cm,
+  bronze/.style={box=#1,fill=bronzec!22,draw=bronzec,font=\footnotesize\sffamily\bfseries},
+  bronze/.default=2.4cm,
+  silver/.style={box=#1,fill=silverc!25,draw=silverc!80!black,font=\footnotesize\sffamily\bfseries},
+  silver/.default=2.4cm,
+  gold/.style={box=#1,fill=goldc!25,draw=goldc!80!black,font=\footnotesize\sffamily\bfseries},
+  gold/.default=2.4cm,
+  step/.style={box=#1,fill=primarylight},
+  step/.default=2.6cm,
+  db/.style={cylinder,shape border rotate=90,aspect=0.18,draw=primary!70,fill=white,
+    align=center,font=\footnotesize\sffamily,minimum height=1.25cm,text width=#1},
+  db/.default=2.3cm,
+  arr/.style={-{Stealth[length=2.6mm]},thick,draw=primary!75},
+  lbl/.style={font=\scriptsize\itshape,text=black!60,align=center},
+}
+
+% Cellule de heatmap : \hm{valeur}{intensité 0-100}
+\newcommand{\hm}[2]{\cellcolor{heat!#2}\ifnum#2>55\textcolor{white}{\bfseries #1}\else #1\fi}
+
+% ==============================================================================
+\begin{document}
+% ==============================================================================
+
+% ------------------------------------------------------------------------------
+% Page de garde
+% ------------------------------------------------------------------------------
+\pagenumbering{alph}
+\begin{titlepage}
+\begin{tikzpicture}[remember picture,overlay]
+  \fill[primary] (current page.north west) rectangle ([yshift=-10.5cm]current page.north east);
+  \fill[accent] ([yshift=-10.5cm]current page.north west) rectangle ([yshift=-10.8cm]current page.north east);
+  % Bandeau Médaillon
+  \node[bronze=2.5cm,anchor=center] (b) at ([xshift=-5.2cm,yshift=-14.2cm]current page.north) {BRONZE};
+  \node[silver=2.5cm,right=0.9cm of b] (s) {SILVER};
+  \node[gold=2.5cm,right=0.9cm of s] (g) {GOLD};
+  \node[box=2.5cm,right=0.9cm of g,fill=primarylight,font=\footnotesize\sffamily\bfseries] (d) {DASHBOARD};
+  \draw[arr] (b) -- (s); \draw[arr] (s) -- (g); \draw[arr] (g) -- (d);
+  \fill[primary] (current page.south west) rectangle ([yshift=1.6cm]current page.south east);
+\end{tikzpicture}
+
+\vspace*{1.2cm}
+{\color{accent}\sffamily\bfseries\large IPSSI — BIG DATA \textbullet\ TP FIL ROUGE}\\[0.9cm]
+{\color{white}\sffamily\bfseries\fontsize{30}{36}\selectfont Data Lakehouse sur HDFS}\\[0.4cm]
+{\color{white}\sffamily\Large Quels facteurs aggravent la sévérité des\\[2pt] accidents de la route au Royaume-Uni ?}\\[0.5cm]
+{\color{white!80!primary}\sffamily\normalsize Analyse de 2 millions d'accidents (2005--2017) avec HDFS, Spark et Delta Lake}
+
+\vspace{6.3cm}
+
+\begin{minipage}[t]{0.55\textwidth}
+\sffamily
+{\color{primary}\bfseries Auteur}\\
+Akram\\[0.4cm]
+{\color{primary}\bfseries Formation}\\
+IPSSI — Module Big Data\\[0.4cm]
+{\color{primary}\bfseries Date}\\
+Novembre 2026
+\end{minipage}%
+\begin{minipage}[t]{0.42\textwidth}
+\sffamily
+{\color{primary}\bfseries Stack technique}\\
+HDFS 3.5 (1 NameNode + 3 DataNodes)\\
+Apache Spark 4.2 \textbullet\ Delta Lake 4.4\\
+SciPy \textbullet\ scikit-learn\\
+Streamlit \textbullet\ Plotly\\[0.4cm]
+{\color{primary}\bfseries Données}\\
+Kaggle — \emph{UK Road Safety}
+\end{minipage}
+\end{titlepage}
+
+% ------------------------------------------------------------------------------
+% Résumé
+% ------------------------------------------------------------------------------
+\pagenumbering{roman}
+\chapter*{Résumé}
+\addcontentsline{toc}{chapter}{Résumé}
+\markboth{Résumé}{}
+
+Ce rapport présente la construction complète d'un \textbf{Data Lakehouse} sur un cluster \textbf{HDFS} distribué, appliqué au jeu de données Kaggle \emph{UK Road Safety} : \textbf{2\,047\,256 accidents} de la route survenus au Royaume-Uni entre 2005 et 2017, et \textbf{2\,177\,205 véhicules} impliqués.
+
+Le projet suit une \textbf{architecture Médaillon} en quatre étapes, une par jour de TP :
+\begin{enumerate}
+  \item \textbf{Jour 1 — Bronze :} ingestion des fichiers CSV sur HDFS, étude du stockage distribué (blocs, réplication, tolérance aux pannes) et création de tables Delta brutes et traçables.
+  \item \textbf{Jour 2 — Silver :} nettoyage, typage, pré-agrégation et jointure des deux sources en une table unique, puis démonstration des garanties ACID de Delta Lake.
+  \item \textbf{Jour 3 — Gold :} analyses Spark SQL avancées (asymétrie, Pareto, fenêtrage temporel, facteurs de gravité) et production de tables de résultats.
+  \item \textbf{Jour 4 — Restitution :} validation par des tests statistiques, segmentation des districts par K-Means et dashboard interactif Streamlit.
+\end{enumerate}
+
+\begin{keybox}[Réponse à la problématique]
+Les accidents graves sont avant tout liés au \textbf{manque de visibilité} et à la \textbf{vitesse} : la nuit sans éclairage, un accident est \textbf{4 fois plus souvent mortel} qu'en plein jour, et cet effet persiste \textbf{à vitesse égale}. Les routes à 60~mph et les zones rurales sont les plus dangereuses. À l'inverse, la mauvaise météo rend les accidents \emph{moins} graves, car les conducteurs ralentissent. Ces résultats sont \textbf{statistiquement significatifs} ($\chi^2$, $p \approx 10^{-141}$ ; Mann-Whitney, $p \approx 0$).
+\end{keybox}
+
+\vspace{4pt}
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}CCCC@{}}
+\kpi{2,05\,M}{accidents analysés} &
+\kpi{4}{tables Gold produites} &
+\kpi{4\,\texttimes}{plus d'accidents mortels la nuit sans éclairage} &
+\kpi{\textminus35\,\%}{d'accidents entre 2005 et 2017}
+\end{tabularx}
+\end{center}
+
+\clearpage
+\tableofcontents
+
+\cleardoublepage
+\pagenumbering{arabic}
+
+% ==============================================================================
+\chapter{Introduction et contexte}
+% ==============================================================================
+
+\section{Problématique}
+
+La sécurité routière est un enjeu majeur de santé publique. Au-delà du \emph{nombre} d'accidents, c'est leur \textbf{gravité} qui détermine le coût humain. Ce projet répond à la question suivante :
+
+\begin{infobox}[Problématique]
+\textbf{Quels facteurs} (météo, luminosité, type de route, vitesse, zone, âge du conducteur) \textbf{aggravent la sévérité des accidents} de la route au Royaume-Uni ?
+\end{infobox}
+
+Pour y répondre, nous avons construit une chaîne de traitement Big Data complète, du fichier brut jusqu'au dashboard décisionnel, en appliquant les bonnes pratiques d'un \emph{Data Lakehouse}.
+
+\section{Les données sources}
+
+Le jeu de données Kaggle \emph{UK Road Safety} est composé de deux fichiers liés par la clé \code{Accident_Index}.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l r r X@{}}
+\toprule
+\headrow \hd{Fichier} & \hd{Taille} & \hd{Lignes} & \hd{Contenu} \\
+\midrule
+\code{Accident_Information.csv} & 672,77 Mo & 2\,047\,256 & \textbf{Les faits} : un accident par ligne (date, lieu, gravité, météo, route…) \\
+\code{Vehicle_Information.csv} & 614,57 Mo & 2\,177\,205 & \textbf{Les véhicules impliqués} : un véhicule par ligne (âge, type, conducteur…) \\
+\bottomrule
+\end{tabularx}
+\caption{Fichiers sources du dataset UK Road Safety}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+  \node[draw=primary,fill=white,rounded corners=3pt,align=left,font=\scriptsize\ttfamily,inner sep=0pt] (acc) {%
+    \begin{tabular}{@{\hspace{6pt}}l@{\hspace{6pt}}}
+      \rowcolor{primary}\multicolumn{1}{@{\hspace{6pt}}l@{\hspace{6pt}}}{\textcolor{white}{\sffamily\bfseries ACCIDENT}}\\
+      \textbf{accident\_index} (PK)\\
+      date, time\\
+      accident\_severity\\
+      latitude, longitude\\
+      light\_conditions\\
+      weather\_conditions\\
+      number\_of\_casualties\\
+      speed\_limit, …\\
+    \end{tabular}};
+  \node[draw=primary,fill=white,rounded corners=3pt,align=left,font=\scriptsize\ttfamily,inner sep=0pt,right=3.2cm of acc] (veh) {%
+    \begin{tabular}{@{\hspace{6pt}}l@{\hspace{6pt}}}
+      \rowcolor{primary}\multicolumn{1}{@{\hspace{6pt}}l@{\hspace{6pt}}}{\textcolor{white}{\sffamily\bfseries VEHICLE}}\\
+      \textbf{accident\_index} (FK)\\
+      vehicle\_reference\\
+      age\_band\_of\_driver\\
+      age\_of\_vehicle\\
+      sex\_of\_driver\\
+      vehicle\_type, …\\
+    \end{tabular}};
+  \draw[thick,primary] (acc.east) -- node[above,font=\footnotesize\sffamily]{implique} node[below,font=\footnotesize\sffamily]{1 \quad---\quad N} (veh.west);
+\end{tikzpicture}
+\caption{Modèle de données : un accident implique un ou plusieurs véhicules (relation 1-N)}
+\end{figure}
+
+\begin{warnbox}
+La relation est \textbf{1-N} : un accident peut impliquer plusieurs véhicules. Ce point est central pour la jointure du Jour 2, où une jointure naïve dupliquerait les accidents.
+\end{warnbox}
+
+\section{Architecture Médaillon}
+
+Nous suivons une \textbf{architecture Médaillon} : chaque couche ajoute un niveau de qualité aux données.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.0cm]
+  \node[box=2.1cm] (k) {Kaggle\\\scriptsize 2 fichiers CSV};
+  \node[db=2.1cm,right=of k] (r) {HDFS\\\scriptsize\texttt{bronze/raw/}};
+  \node[bronze=2.2cm,right=of r] (b) {BRONZE\\\scriptsize\normalfont accidents\\vehicles};
+  \node[silver=2.2cm,right=of b] (s) {SILVER\\\scriptsize\normalfont accidents\_enriched};
+  \node[gold=2.4cm,right=of s] (g) {GOLD\\\scriptsize\normalfont 4 tables\\de résultats};
+  \node[box=2.1cm,right=of g,fill=primarylight] (d) {Dashboard\\\scriptsize Streamlit :8501};
+  \draw[arr] (k) -- node[lbl,above]{copie} (r);
+  \draw[arr] (r) -- node[lbl,above]{J1} (b);
+  \draw[arr] (b) -- node[lbl,above]{J2} (s);
+  \draw[arr] (s) -- node[lbl,above]{J3 / J4} (g);
+  \draw[arr] (g) -- node[lbl,above]{J4} (d);
+  \node[lbl,below=0.15cm of b] {ingestion\\+ traçabilité};
+  \node[lbl,below=0.15cm of s] {nettoyage, typage\\agrégation, jointure};
+  \node[lbl,below=0.15cm of g] {Spark SQL\\fenêtrage, K-Means};
+\end{tikzpicture}}
+\caption{Vue d'ensemble de la chaîne de traitement}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+\headrow \hd{Couche} & \hd{Contenu} & \hd{Règle} \\
+\midrule
+\textcolor{bronzec}{\bfseries Bronze} & Données \textbf{fidèles à la source}, toutes en texte & On ne modifie rien, on ajoute seulement la traçabilité \\
+\textcolor{silverc!70!black}{\bfseries Silver} & Données \textbf{nettoyées, typées, jointes et enrichies} & Une ligne = un accident, prête pour l'analyse \\
+\textcolor{goldc!80!black}{\bfseries Gold} & \textbf{Petites tables de résultats} déjà agrégées & Calculées une fois, lues instantanément par le dashboard \\
+\bottomrule
+\end{tabularx}
+\caption{Rôle de chaque couche de l'architecture Médaillon}
+\end{table}
+
+\section{Environnement technique}
+
+L'environnement est entièrement conteneurisé avec Docker Compose :
+\begin{itemize}
+  \item \textbf{HDFS 3.5} : 1 NameNode et 3 DataNodes, blocs réduits à 16 Mo, réplication de 2 ;
+  \item \textbf{Apache Spark 4.2} (PySpark) avec \textbf{Delta Lake 4.4}, piloté depuis JupyterLab ;
+  \item \textbf{SciPy} et \textbf{scikit-learn} pour les tests statistiques et le clustering ;
+  \item \textbf{Streamlit} et \textbf{Plotly} pour le dashboard (port 8501).
+\end{itemize}
+
+% ==============================================================================
+\chapter{Jour 1 — Ingestion HDFS et couche Bronze}
+% ==============================================================================
+
+\section{Démarche}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.55cm]
+  \node[step=2.15cm] (a) {\textbf{1.} Inventaire local\\\scriptsize\texttt{data\_raw/*.csv}};
+  \node[step=2.15cm,right=of a] (b) {\textbf{2.} SparkSession\\\scriptsize config HDFS};
+  \node[step=2.15cm,right=of b] (c) {\textbf{3.} Copie\\vers HDFS};
+  \node[step=2.15cm,right=of c] (d) {\textbf{4.} Blocs\\\scriptsize 16 Mo $\times$ 2};
+  \node[step=2.15cm,below=0.9cm of d] (e) {\textbf{5.} Crash-test\\\scriptsize arrêt datanode2};
+  \node[step=2.15cm,left=of e] (f) {\textbf{6.} Lecture CSV\\\scriptsize snake\_case};
+  \node[bronze=2.15cm,left=of f] (g) {\textbf{7.} Écriture\\Delta Bronze};
+  \node[step=2.15cm,left=of g] (h) {\textbf{8.} Contrôle\\\scriptsize\texttt{\_delta\_log}};
+  \draw[arr] (a)--(b); \draw[arr] (b)--(c); \draw[arr] (c)--(d); \draw[arr] (d)--(e);
+  \draw[arr] (e)--(f); \draw[arr] (f)--(g); \draw[arr] (g)--(h);
+\end{tikzpicture}}
+\caption{Les huit étapes du Jour 1}
+\end{figure}
+
+\section{Configuration du cluster}
+
+La SparkSession lit sa configuration dans \code{config/spark-defaults.conf}. Nous avons vérifié les paramètres suivants :
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+\headrow \hd{Paramètre} & \hd{Valeur} & \hd{Signification} \\
+\midrule
+\code{fs.defaultFS} & \code{hdfs://namenode:9000} & Spark lit et écrit sur HDFS par défaut \\
+\code{dfs.blocksize} & 16\,777\,216 (16 Mo) & Taille d'un bloc HDFS (volontairement petite pour le TP) \\
+\code{dfs.replication} & 2 & Chaque bloc est stocké sur 2 DataNodes \\
+\bottomrule
+\end{tabularx}
+\caption{Paramètres de stockage HDFS}
+\end{table}
+
+\section{Stockage distribué : blocs et réplication}
+
+Les deux fichiers CSV sont copiés vers le dossier HDFS \code{/lakehouse/bronze/raw/archive/}, avec la méthode Hadoop \code{copyFromLocalFile}. HDFS découpe chaque fichier en \textbf{blocs de 16 Mo}, et chaque bloc est \textbf{répliqué sur 2 des 3 DataNodes}.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l r l@{}}
+\toprule
+\headrow \hd{Fichier} & \hd{Taille} & \hd{Nombre de blocs} \\
+\midrule
+\code{Accident_Information.csv} & 672,77 Mo & \textbf{43} (42 pleins + 1 de 0,77 Mo) \\
+\code{Vehicle_Information.csv} & 614,57 Mo & \textbf{39} (38 pleins + 1 de 6,57 Mo) \\
+\bottomrule
+\end{tabular}
+\caption{Découpage des fichiers en blocs HDFS}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.4cm]
+  \node[box=4.3cm,fill=primarylight] (f) {\code{Accident_Information.csv}\\\scriptsize 672,77 Mo};
+  \node[box=1.5cm,right=1.3cm of f,yshift=1.3cm,fill=bronzec!15] (b0) {Bloc 0\\\scriptsize 16 Mo};
+  \node[box=1.5cm,below=of b0,fill=bronzec!15] (b1) {Bloc 1\\\scriptsize 16 Mo};
+  \node[below=0.1cm of b1,font=\small] (bx) {…};
+  \node[box=1.5cm,below=0.1cm of bx,fill=bronzec!15] (b42) {Bloc 42\\\scriptsize 0,77 Mo};
+  \node[db=1.8cm,right=2.2cm of b0] (d1) {datanode1};
+  \node[db=1.8cm,below=0.5cm of d1] (d2) {datanode2};
+  \node[db=1.8cm,below=0.5cm of d2] (d3) {datanode3};
+  \foreach \b in {b0,b1,b42} \draw[arr] (f.east) -- (\b.west);
+  \draw[arr,accent] (b0.east) -- (d1.west);
+  \draw[arr,accent] (b0.east) -- (d2.west);
+  \draw[arr,accent!60!black] (b1.east) -- (d1.west);
+  \draw[arr,accent!60!black] (b1.east) -- (d3.west);
+  \draw[arr,primary!50] (b42.east) -- (d2.west);
+  \draw[arr,primary!50] (b42.east) -- (d3.west);
+\end{tikzpicture}
+\caption{Chaque bloc est stocké sur 2 des 3 DataNodes}
+\end{figure}
+
+\subsubsection{Réponses aux questions d'analyse}
+\begin{itemize}
+  \item \textbf{Nombre de blocs :} $672{,}77 / 16 = 42{,}05$, donc 42 blocs pleins et un dernier bloc partiel de 0,77 Mo.
+  \item \textbf{Un fichier de 3 Mo occupe-t-il 16 Mo ?} Non. Le bloc est une \textbf{taille maximale}, pas une allocation fixe : un fichier de 3 Mo occupe 3 Mo par réplique. Il consomme en revanche une entrée dans la mémoire du NameNode, d'où le problème des « petits fichiers ».
+  \item \textbf{Pourquoi une réplication de 2 sur 3 DataNodes ?} Pour tolérer la perte d'un nœud \textbf{et} garder un troisième nœud libre, sur lequel le NameNode peut recopier les blocs perdus afin de revenir à 2 copies.
+\end{itemize}
+
+\section{Crash-test : tolérance aux pannes}
+
+Protocole : \code{docker stop datanode2}. Après environ \textbf{50 secondes} ($2 \times 10$ s de recheck + $10 \times 3$ s de heartbeat), le NameNode déclare le nœud mort et \textbf{recopie automatiquement} les blocs sous-répliqués vers un DataNode restant.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.6cm]
+  \node[step=2.7cm] (t1) {\textbf{t = 0 s}\\\scriptsize\code{docker stop datanode2}};
+  \node[step=2.7cm,right=of t1] (t2) {\textbf{0 à 50 s}\\\scriptsize plus aucun heartbeat\\reçu par le NameNode};
+  \node[step=2.7cm,right=of t2,fill=dangerred!12,draw=dangerred] (t3) {\textbf{$\approx$ 50 s}\\\scriptsize datanode2 = DEAD\\blocs sous-répliqués};
+  \node[step=2.7cm,right=of t3,fill=okgreen!12,draw=okgreen] (t4) {\textbf{Ré-réplication}\\\scriptsize retour à 2 copies\\aucune perte};
+  \draw[arr] (t1)--(t2); \draw[arr] (t2)--(t3); \draw[arr] (t3)--(t4);
+\end{tikzpicture}}
+\caption{Déroulé du crash-test}
+\end{figure}
+
+La relecture du plus gros fichier avec Spark a renvoyé \textbf{2\,047\,257 lignes} (2\,047\,256 accidents + la ligne d'en-tête, puisque la lecture se faisait sans \code{header=True}), réparties en \textbf{10 partitions}. Spark regroupe plusieurs blocs HDFS par partition : il n'y a pas forcément une partition par bloc.
+
+\begin{keybox}
+Malgré la perte d'un DataNode, \textbf{aucune donnée n'a été perdue} : la réplication HDFS a joué son rôle.
+\end{keybox}
+
+\section{Construction des tables Bronze}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.7cm]
+  \node[db=2.3cm] (csv) {CSV brut\\sur HDFS};
+  \node[step=3.1cm,right=of csv] (r) {\textbf{Lecture Spark}\\\scriptsize header=True\\inferSchema=False\\nullValue='NA'};
+  \node[step=3.1cm,right=of r] (n) {\textbf{snake\_case}\\\scriptsize Local\_Authority\_(District)\\$\rightarrow$ local\_authority\_district};
+  \node[step=3.1cm,right=of n] (t) {\textbf{Traçabilité}\\\scriptsize \_source\_file\\\_source\_dataset\\\_ingested\_at};
+  \node[bronze=2.3cm,right=of t] (w) {Écriture\\Delta};
+  \draw[arr] (csv)--(r); \draw[arr] (r)--(n); \draw[arr] (n)--(t); \draw[arr] (t)--(w);
+\end{tikzpicture}}
+\caption{Traitement appliqué à chaque fichier}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\small
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+\headrow \hd{Traitement} & \hd{Code} & \hd{Justification} \\
+\midrule
+Lecture avec en-tête & \code{header=True} & Les noms de colonnes viennent de la première ligne \\
+\textbf{Pas d'inférence de type} & \code{inferSchema=False} & Bronze reste \textbf{fidèle à la source} : tout en texte, le typage est fait en Silver \\
+NULL explicites & \code{nullValue="NA"} & Les \code{"NA"} du CSV deviennent de vrais NULL \\
+Noms normalisés & \code{to_snake()} & Delta et Parquet refusent les espaces et parenthèses dans les noms \\
+\code{_source_file} & \code{_metadata.file_path} & Fichier d'origine de chaque ligne \\
+\code{_source_dataset} & \code{lit("uk_road_safety")} & Dataset d'origine \\
+\code{_ingested_at} & \code{current_timestamp()} & Date et heure d'ingestion \\
+\bottomrule
+\end{tabularx}
+\caption{Traitements de la couche Bronze}
+\end{table}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l l r@{}}
+\toprule
+\headrow \hd{Table Bronze} & \hd{Chemin HDFS} & \hd{Lignes} \\
+\midrule
+\code{accidents} & \code{/lakehouse/bronze/accidents} & 2\,047\,256 \\
+\code{vehicles} & \code{/lakehouse/bronze/vehicles} & 2\,177\,205 \\
+\bottomrule
+\end{tabular}
+\caption{Résultat du Jour 1}
+\end{table}
+
+L'auto-contrôle final vérifie que chaque dossier contient bien un \code{_delta_log}, c'est-à-dire qu'il s'agit de vraies tables Delta.
+
+% ==============================================================================
+\chapter{Jour 2 — De Bronze à Silver}
+% ==============================================================================
+
+\section{Vue d'ensemble du pipeline}
+
+\begin{figure}[H]
+\centering
+\resizebox{0.95\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.55cm and 0.9cm]
+  \node[bronze=2.6cm] (ba) {Bronze accidents\\\scriptsize\normalfont 2\,047\,256 lignes};
+  \node[bronze=2.6cm,right=3.2cm of ba] (bv) {Bronze vehicles\\\scriptsize\normalfont 2\,177\,205 lignes};
+  \node[step=2.6cm,below=of ba] (d1) {\textbf{1.} Diagnostic qualité};
+  \node[step=2.6cm,below=of bv] (d2) {\textbf{1.} Diagnostic qualité};
+  \node[step=2.6cm,below=of d1] (c1) {\textbf{2.} Nettoyage\\\scriptsize sentinelles $\rightarrow$ NULL\\clé harmonisée, typage};
+  \node[step=2.6cm,below=of d2] (c2) {\textbf{2.} Nettoyage\\\scriptsize sentinelles $\rightarrow$ NULL\\clé harmonisée};
+  \node[step=2.6cm,below=of c1] (e1) {\textbf{3.} Colonnes dérivées\\\scriptsize hour, weekend, night};
+  \node[step=2.6cm,below=of c2] (a2) {\textbf{4.} Pré-agrégation\\\scriptsize 1 ligne / accident};
+  \node[diamond,draw=accent,fill=accent!12,aspect=2.2,font=\footnotesize\sffamily,align=center,inner sep=1pt]
+       (j) at ($(e1)!0.5!(a2)+(0,-1.6)$) {\textbf{5.} LEFT JOIN\\\scriptsize Broadcast};
+  \node[step=3.2cm,below=0.6cm of j] (k) {Indicateur croisé + contrôles\\\scriptsize match rate, absence N-M};
+  \node[silver=3.2cm,below=of k] (s) {Silver\\\scriptsize\normalfont accidents\_enriched — 2\,047\,256 lignes};
+  \draw[arr] (ba)--(d1); \draw[arr] (d1)--(c1); \draw[arr] (c1)--(e1);
+  \draw[arr] (bv)--(d2); \draw[arr] (d2)--(c2); \draw[arr] (c2)--(a2);
+  \draw[arr] (e1) |- (j.west); \draw[arr] (a2) |- (j.east);
+  \draw[arr] (j)--(k); \draw[arr] (k)--(s);
+\end{tikzpicture}}
+\caption{Pipeline de construction de la table Silver}
+\end{figure}
+
+\section{Diagnostic qualité}
+
+Avant toute modification, nous avons mesuré l'état des tables Bronze.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l r r@{}}
+\toprule
+\headrow \hd{Colonne (accidents)} & \hd{NULL} & \hd{\%} \\
+\midrule
+\code{2nd_road_class} & 844\,272 & 41,24 \\
+\code{2nd_road_number} & 17\,593 & 0,86 \\
+\code{pedestrian_crossing_physical_facilities} & 3\,560 & 0,17 \\
+\code{latitude} / \code{longitude} & 174 / 175 & 0,01 \\
+\code{speed_limit} & 37 & $\approx$ 0 \\
+\code{accident_index} (clé) & \textbf{0} & 0 \\
+\bottomrule
+\end{tabular}
+\caption{Principales colonnes contenant des valeurs manquantes}
+\end{table}
+
+Le fort taux de \code{2nd_road_class} est normal : un accident hors intersection n'a pas de deuxième route.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l r r r r r@{}}
+\toprule
+\headrow \hd{Table} & \hd{Lignes} & \hd{Doublons} & \hd{Clé NULL} & \hd{Clés distinctes} & \hd{Ratio lignes/clé} \\
+\midrule
+accidents & 2\,047\,256 & 0 & 0 & 2\,047\,256 & \textbf{1,00} \\
+vehicles & 2\,177\,205 & 0 & 0 & 1\,488\,981 & \textbf{1,46} \\
+\bottomrule
+\end{tabular}
+\caption{Doublons et unicité de la clé de jointure}
+\end{table}
+
+\begin{warnbox}
+Le \textbf{ratio lignes/clé} vaut 1,46 pour vehicles : environ 1,5 véhicule par accident. \textbf{Sans pré-agrégation, la jointure dupliquerait les accidents.}
+\end{warnbox}
+
+\section{Nettoyage et typage}
+
+\begin{table}[H]
+\centering
+\small
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+\toprule
+\headrow \hd{Traitement} & \hd{Code} & \hd{Effet} \\
+\midrule
+Sentinelles $\rightarrow$ NULL & \code{null_sentinels()} & « Data missing… » devient NULL \\
+Harmonisation de la clé & \code{upper(trim(accident_index))} & Même format des deux côtés \\
+Dédoublonnage & \code{dropDuplicates(["accident_index"])} & 0 ligne retirée \\
+Date & \code{try_to_date("date", "yyyy-MM-dd")} & texte $\rightarrow$ \code{date} \\
+Horodatage & \code{try_to_timestamp(..., lit("yyyy-MM-dd HH:mm"))} & texte $\rightarrow$ \code{timestamp} \\
+Coordonnées & \code{try_cast("double")} & latitude, longitude \\
+Compteurs & \code{try_cast("int")} & victimes, véhicules, vitesse, année \\
+Filtres d'anomalies & date non nulle, véhicules $> 0$, latitude entre 49 et 61 & 0 ligne retirée \\
+\bottomrule
+\end{tabularx}
+\caption{Traitements appliqués à la table accidents}
+\end{table}
+
+\begin{infobox}[Pourquoi les fonctions \texttt{try\_*} ?]
+Spark 4 active le \textbf{mode ANSI} : une conversion impossible (par exemple une heure vide qui donne \code{"2005-11-30 "}) \textbf{fait échouer le job}. Les fonctions \code{try_to_date}, \code{try_to_timestamp} et \code{try_cast} renvoient NULL à la place.
+
+Nous avons rencontré ce cas : l'erreur n'est apparue qu'à l'écriture (\code{save()}), et pas au \code{count()}. C'est une illustration de la \textbf{Lazy Evaluation} : le \code{count()} n'avait pas besoin de la colonne horodatée, donc Spark ne l'avait pas calculée.
+\end{infobox}
+
+\subsubsection{Colonnes métier dérivées}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+\headrow \hd{Colonne} & \hd{Calcul} & \hd{Usage} \\
+\midrule
+\code{accident_hour} & \code{hour(accident_ts)} & Répartition horaire \\
+\code{is_weekend} & jour $\in$ \{samedi, dimanche\} & Semaine vs week-end \\
+\code{is_night} & \code{light_conditions} commence par « Darkness » & Effet de la luminosité \\
+\bottomrule
+\end{tabularx}
+\caption{Colonnes dérivées}
+\end{table}
+
+\section{Pré-agrégation et jointure}
+
+Pour éviter l'\textbf{explosion N-à-M}, la table vehicles est résumée à \textbf{une ligne par accident} avant la jointure.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.25cm]
+  \node[box=4.4cm,fill=bronzec!12,draw=bronzec] (v1) {\texttt{2005A001} · 26-35 ans · 3 ans};
+  \node[box=4.4cm,fill=bronzec!12,draw=bronzec,below=of v1] (v2) {\texttt{2005A001} · 16-20 ans · 7 ans};
+  \node[box=4.4cm,fill=bronzec!12,draw=bronzec,below=of v2] (v3) {\texttt{2005A002} · 46-55 ans · 12 ans};
+  \node[box=6.2cm,fill=silverc!20,draw=silverc!80!black,right=2.6cm of v1,yshift=-0.6cm] (a1) {\texttt{2005A001} · 2 véhicules · âge moyen 5 · jeune conducteur = oui};
+  \node[box=6.2cm,fill=silverc!20,draw=silverc!80!black,below=0.6cm of a1] (a2) {\texttt{2005A002} · 1 véhicule · âge moyen 12 · jeune conducteur = non};
+  \draw[arr] (v1.east) -- (a1.west); \draw[arr] (v2.east) -- (a1.west); \draw[arr] (v3.east) -- (a2.west);
+  \node[lbl,above=0.15cm of v1] {\textbf{Avant :} 1 ligne par véhicule};
+  \node[lbl,above=0.15cm of a1] {\textbf{Après :} 1 ligne par accident};
+\end{tikzpicture}}
+\caption{Pré-agrégation de la table vehicles par \texttt{groupBy(accident\_index)}}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l l@{}}
+\toprule
+\headrow \hd{Colonne agrégée} & \hd{Calcul} \\
+\midrule
+\code{nb_vehicules_enregistres} & \code{count("*")} \\
+\code{age_moyen_vehicules} & \code{round(avg("age_of_vehicle"), 1)} \\
+\code{has_young_driver} & au moins un conducteur de 16 à 25 ans \\
+\code{victimes_par_vehicule} & \code{number_of_casualties / nb_vehicules_enregistres} \\
+\bottomrule
+\end{tabular}
+\caption{Colonnes issues de la table vehicles et indicateur croisé}
+\end{table}
+
+\subsubsection{Stratégie physique choisie par Spark}
+
+Le plan physique (\code{explain()}) montre un \textbf{\code{BroadcastHashJoin} LeftOuter}, choisi automatiquement : la table vehicles agrégée est assez compacte pour être copiée sur chaque exécuteur, et la grande table accidents n'a pas besoin d'être redistribuée. Les deux \code{Exchange hashpartitioning} du plan sont des \emph{shuffles} provenant du \code{dropDuplicates} et du \code{groupBy}, pas de la jointure.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.4cm]
+  \node[box=2.8cm,fill=silverc!20] (va) {vehicles agrégée\\\scriptsize (4 colonnes)};
+  \node[step=2.6cm,right=2.2cm of va,yshift=1.2cm] (e1) {Exécuteur 1\\\scriptsize partition d'accidents};
+  \node[step=2.6cm,below=of e1] (e2) {Exécuteur 2\\\scriptsize partition d'accidents};
+  \node[step=2.6cm,below=of e2] (e3) {Exécuteur N\\\scriptsize partition d'accidents};
+  \node[box=2.6cm,fill=accent!15,draw=accent,right=1.2cm of e2] (r) {\textbf{BroadcastHashJoin}\\\scriptsize LeftOuter};
+  \draw[arr] (va.east) -- node[lbl,above,sloped]{copie} (e1.west);
+  \draw[arr] (va.east) -- (e2.west);
+  \draw[arr] (va.east) -- (e3.west);
+  \draw[arr] (e1.east) -- (r.west); \draw[arr] (e2.east) -- (r.west); \draw[arr] (e3.east) -- (r.west);
+\end{tikzpicture}
+\caption{Broadcast Hash Join : la petite table est copiée sur chaque exécuteur}
+\end{figure}
+
+\subsubsection{Contrôles de qualité de la jointure}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l r l@{}}
+\toprule
+\headrow \hd{Contrôle} & \hd{Résultat} & \hd{Verdict} \\
+\midrule
+Lignes avant jointure & 2\,047\,256 & \\
+Lignes dans la table Silver & 2\,047\,256 & \textcolor{okgreen}{\checkmark\ aucune explosion N-M} \\
+Accidents rapprochés d'un véhicule & 1\,389\,724 & \\
+\textbf{Match rate} & \textbf{67,88 \%} & \textcolor{warnorange}{à expliquer} \\
+\bottomrule
+\end{tabular}
+\caption{Contrôles de la jointure}
+\end{table}
+
+Environ 32 \% des accidents n'ont aucun véhicule correspondant. Ce n'est pas une erreur de code : les deux fichiers Kaggle \textbf{ne couvrent pas exactement les mêmes accidents}. Grâce au \code{LEFT JOIN}, ces accidents sont conservés : leurs autres informations (gravité, lieu, météo) restent exploitables, et seules les colonnes issues de vehicles valent NULL.
+
+\section{Garanties ACID de Delta Lake}
+
+\subsection{Le journal de transactions}
+
+Chaque table Delta contient un dossier \code{_delta_log} : une suite de fichiers JSON numérotés, un par version de la table.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+\headrow \hd{Action} & \hd{Contenu du fichier \texttt{00000000000000000000.json}} \\
+\midrule
+\code{commitInfo} & Opération \code{WRITE}, mode \code{Overwrite}, horodatage, statistiques \\
+\code{metaData} & \textbf{Schéma de la table} (noms et types des colonnes) \\
+\code{protocol} & Version du protocole Delta (lecteur 1, écrivain 2) \\
+\code{add} & Un fichier Parquet ajouté à la table (11 fichiers) \\
+\bottomrule
+\end{tabularx}
+\caption{Actions du journal de transactions}
+\end{table}
+
+Tant que ce fichier JSON n'est pas écrit, les nouveaux fichiers Parquet sont ignorés : c'est ce qui garantit l'\textbf{atomicité}. Nos écritures qui ont échoué au cours du TP n'ont donc laissé aucune trace dans la table.
+
+\subsection{Schema Enforcement}
+
+Un DataFrame contenant des colonnes inconnues (\code{fake_id}, \code{intruder_col}) a été ajouté en mode \code{append} :
+
+\begin{lstlisting}
+[DELTA_METADATA_MISMATCH] A metadata mismatch was detected when writing to the Delta table.
+\end{lstlisting}
+
+\begin{keybox}
+Delta a \textbf{refusé l'écriture} : la table est protégée contre les données incohérentes.
+\end{keybox}
+
+\subsection{MERGE INTO et Time Travel}
+
+Lot de test : \textbf{5 accidents existants corrigés} (+1 victime) et \textbf{1 nouvel accident} (\code{TEST_NEW_001}).
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.9cm]
+  \node[box=2.8cm,fill=accent!12,draw=accent] (src) {Lot de mises à jour\\\scriptsize 5 corrections + 1 nouveau};
+  \node[db=2.3cm,below=0.6cm of src] (tgt) {Silver v0};
+  \node[diamond,draw=primary,fill=primarylight,aspect=1.8,font=\footnotesize\sffamily,align=center,inner sep=1pt,right=1.4cm of src,yshift=-0.9cm] (m) {MERGE\\\scriptsize accident\_index};
+  \node[step=3.4cm,right=1.4cm of m,yshift=0.8cm] (u) {\textbf{whenMatchedUpdate}\\\scriptsize clé trouvée : mise à jour};
+  \node[step=3.4cm,right=1.4cm of m,yshift=-0.8cm] (i) {\textbf{whenNotMatchedInsertAll}\\\scriptsize clé absente : insertion};
+  \node[db=2.3cm,right=1.0cm of u,yshift=-0.8cm] (v1) {Silver v1};
+  \draw[arr] (src.east) -- (m); \draw[arr] (tgt.east) -- (m);
+  \draw[arr] (m) -- (u.west); \draw[arr] (m) -- (i.west);
+  \draw[arr] (u.east) -- (v1); \draw[arr] (i.east) -- (v1);
+\end{tikzpicture}}
+\caption{Fonctionnement du MERGE (upsert)}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l c c@{}}
+\toprule
+\headrow \hd{accident\_index} & \hd{Victimes v0} & \hd{Victimes v1} \\
+\midrule
+200501BS00014 & 1 & 2 \\
+200501BS70006 & 2 & 3 \\
+200501BS70011 & 1 & 2 \\
+200501BS70042 & 2 & 3 \\
+200501BS70073 & 1 & 2 \\
+TEST\_NEW\_001 & \emph{absent} & 1 \\
+\bottomrule
+\end{tabular}
+\caption{Effet du MERGE, vérifié par Time Travel}
+\end{table}
+
+\begin{itemize}
+  \item \code{option("versionAsOf", 0)} relit la table \textbf{avant} le MERGE : c'est le \textbf{Time Travel}.
+  \item \code{numTargetRowsCopied = 204565} : pour modifier 5 lignes, Delta a réécrit le fichier Parquet qui les contenait (\textbf{copy-on-write}). Les anciens fichiers sont conservés, ce qui rend le Time Travel possible.
+  \item Les données de test ont ensuite été annulées avec \code{restoreToVersion(0)} : au Jour 3, la table compte bien \textbf{2\,047\,256 lignes}.
+\end{itemize}
+
+\section{Choix sur les valeurs manquantes}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}X c X@{}}
+\toprule
+\headrow \hd{Option} & \hd{Choix} & \hd{Raison} \\
+\midrule
+Supprimer les lignes avec des NULL & \textcolor{dangerred}{\bfseries Non} & On perdrait 41 \% des accidents à cause de \code{2nd_road_class} seule \\
+Remplacer les NULL par 0 ou une moyenne & \textcolor{dangerred}{\bfseries Non} & NULL signifie « inconnu », pas « zéro » : cela fausserait les statistiques \\
+Conserver les NULL et filtrer selon l'analyse & \textcolor{okgreen}{\bfseries Oui} & Chaque analyse filtre selon son besoin \\
+Supprimer les lignes inutilisables (clé ou date absente) & \textcolor{okgreen}{\bfseries Oui} & 0 ligne concernée \\
+\bottomrule
+\end{tabularx}
+\caption{Stratégie de gestion des valeurs manquantes}
+\end{table}
+
+\section{Synthèse Bronze $\rightarrow$ Silver}
+
+\begin{table}[H]
+\centering
+\small
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+\headrow \hd{} & \hd{Bronze} & \hd{Silver} \\
+\midrule
+Tables & 2 (accidents, vehicles) & 1 (\code{accidents_enriched}) \\
+Types & tout en \code{string} & \code{date}, \code{timestamp}, \code{int}, \code{double}, \code{boolean} \\
+Valeurs manquantes & « NA » et « Data missing or out of range » & vrais NULL \\
+Granularité & 1 accident ou 1 véhicule par ligne & \textbf{1 accident par ligne} \\
+Lignes & 2\,047\,256 + 2\,177\,205 & \textbf{2\,047\,256} \\
+Nouvelles colonnes & traçabilité & 7 colonnes métier (heure, week-end, nuit, véhicules, âge moyen, jeune conducteur, victimes/véhicule) \\
+Garanties & Delta (versionnée) & Schema Enforcement, MERGE et Time Travel démontrés \\
+\bottomrule
+\end{tabularx}
+\caption{Comparaison des couches Bronze et Silver}
+\end{table}
+
+\begin{keybox}[En une phrase]
+Nous sommes passés de \textbf{deux fichiers CSV bruts} répliqués sur HDFS à \textbf{une table Delta unique, propre, typée et enrichie}, avec une ligne par accident, contrôlée contre les doublons et prête pour l'analyse.
+\end{keybox}
+
+% ==============================================================================
+\chapter{Jour 3 — Analyses Spark SQL et couche Gold}
+% ==============================================================================
+
+\section{Vue d'ensemble}
+
+Au Jour 3, nous analysons la table Silver avec \textbf{Spark SQL} et produisons \textbf{3 tables Gold} : de petites tables de résultats, calculées une fois, qui alimentent le dashboard. La table Silver est exposée comme vue SQL temporaire \code{v_silver}.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.4cm and 1.1cm]
+  \node[silver=2.6cm] (s) {SILVER\\\scriptsize\normalfont 2\,047\,256 lignes};
+  \node[step=3.2cm,right=1.3cm of s,yshift=2.1cm] (a1) {\textbf{Distribution}\\\scriptsize SKEWNESS, quantiles};
+  \node[step=3.2cm,below=of a1] (g1) {\textbf{Gold n°1}\\\scriptsize DENSE\_RANK + cumul Pareto};
+  \node[step=3.2cm,below=of g1] (g2) {\textbf{Gold n°2}\\\scriptsize LAG + moyenne glissante};
+  \node[step=3.2cm,below=of g2] (g3) {\textbf{Gold n°3}\\\scriptsize STACK + ROW\_NUMBER};
+  \node[step=3.2cm,below=of g3] (o) {\textbf{OPTIMIZE}\\\scriptsize compaction Silver};
+  \node[box=3.0cm,right=of a1] (c) {Choix des indicateurs\\\scriptsize médiane, P90, P95};
+  \node[gold=3.0cm,right=of g1] (t1) {pareto\_districts\\\scriptsize\normalfont 416 lignes};
+  \node[gold=3.0cm,right=of g2] (t2) {evolution\_mensuelle\\\scriptsize\normalfont 156 lignes};
+  \node[gold=3.0cm,right=of g3] (t3) {facteurs\_gravite\\\scriptsize\normalfont 37 lignes};
+  \node[box=3.0cm,right=of o] (f) {11 fichiers $\rightarrow$ 1};
+  \foreach \n in {a1,g1,g2,g3,o} \draw[arr] (s.east) -- (\n.west);
+  \draw[arr] (a1)--(c); \draw[arr] (g1)--(t1); \draw[arr] (g2)--(t2); \draw[arr] (g3)--(t3); \draw[arr] (o)--(f);
+\end{tikzpicture}}
+\caption{Analyses du Jour 3 et tables Gold produites}
+\end{figure}
+
+\section{Distribution du nombre de victimes}
+
+Pour résumer « combien de victimes fait un accident », faut-il utiliser la \textbf{moyenne} ou la \textbf{médiane} ? Tout dépend de l'\textbf{asymétrie} de la variable.
+
+\begin{lstlisting}[language=SparkSQL]
+SELECT COUNT(*), AVG(number_of_casualties), STDDEV(number_of_casualties),
+       SKEWNESS(number_of_casualties),
+       PERCENTILE_APPROX(number_of_casualties, 0.25),  -- P25
+       PERCENTILE_APPROX(number_of_casualties, 0.50),  -- mediane
+       PERCENTILE_APPROX(number_of_casualties, 0.75),  -- P75
+       PERCENTILE_APPROX(number_of_casualties, 0.90),  -- P90
+       PERCENTILE_APPROX(number_of_casualties, 0.95),  -- P95
+       MAX(number_of_casualties)
+FROM v_silver
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}r r r >{\columncolor{accent!15}}r r >{\columncolor{accent!15}}r r r r r r@{}}
+\toprule
+\headrow \hd{N} & \hd{Moy.} & \hd{É.-type} & \hd{Skew.} & \hd{P25} & \hd{Méd.} & \hd{P75} & \hd{IQR} & \hd{P90} & \hd{P95} & \hd{Max} \\
+\midrule
+2\,047\,256 & 1,346 & 0,818 & \textbf{8,573} & 1 & \textbf{1} & 1 & 0 & 2 & 3 & 93 \\
+\bottomrule
+\end{tabular}
+\caption{Statistiques descriptives du nombre de victimes par accident}
+\end{table}
+
+\begin{itemize}
+  \item La plupart des accidents ne font \textbf{qu'une seule victime} : P25, médiane et P75 valent tous 1.
+  \item Quelques accidents rares font beaucoup de victimes (jusqu'à 93). Ils \textbf{tirent la moyenne à 1,35}, alors qu'aucun accident réel n'a 1,35 victime.
+  \item La \textbf{skewness de 8,57}, très supérieure à 1, confirme une distribution \textbf{très asymétrique}, avec une longue traîne à droite.
+\end{itemize}
+
+\begin{keybox}[Choix des indicateurs]
+La moyenne est trompeuse. Nous retenons la \textbf{médiane} pour décrire un accident typique, les \textbf{P90/P95} pour suivre les accidents lourds, et surtout le \textbf{\% d'accidents graves ou mortels}, plus discriminant pour comparer des catégories.
+\end{keybox}
+
+\section{Gold n°1 — Classement des districts et loi de Pareto}
+
+La \textbf{loi de Pareto (80/20)} prédit souvent que 20 \% des catégories concentrent 80 \% du total. La question est donc : \emph{un petit nombre de districts concentre-t-il la majorité des victimes ?}
+
+\begin{lstlisting}[language=SparkSQL]
+WITH stats_district AS (
+    SELECT local_authority_district AS district,
+           COUNT(*) AS nb_accidents,
+           SUM(number_of_casualties) AS total_victimes,
+           PERCENTILE_APPROX(number_of_casualties, 0.5) AS mediane_victimes
+    FROM v_silver
+    GROUP BY local_authority_district
+)
+SELECT district, total_victimes,
+       DENSE_RANK() OVER (ORDER BY total_victimes DESC) AS rang,
+       SUM(total_victimes) OVER (ORDER BY total_victimes DESC, district
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+         / SUM(total_victimes) OVER () * 100 AS pct_cumule
+FROM stats_district
+\end{lstlisting}
+
+Les \textbf{fonctions de fenêtrage} (\code{OVER}) calculent une valeur en regardant les autres lignes (rang, cumul) \textbf{sans les fusionner}, contrairement à \code{GROUP BY}.
+
+\begin{table}[H]
+\centering
+\small
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}r l r r r r r@{}}
+\toprule
+\headrow \hd{Rang} & \hd{District} & \hd{Accidents} & \hd{Victimes} & \hd{\% cumulé} & \hd{\% lourds} & \hd{\% graves} \\
+\midrule
+1 & Birmingham & 39\,662 & 54\,415 & 1,97 & 24,25 & 13,27 \\
+2 & Leeds & 27\,334 & 37\,779 & 3,35 & 24,88 & 14,48 \\
+3 & Bradford & 18\,147 & 26\,519 & 4,31 & 28,01 & 14,42 \\
+4 & Liverpool & 17\,281 & 25\,763 & 5,24 & 28,67 & 15,84 \\
+5 & Manchester & 18\,113 & 25\,010 & 6,15 & 23,63 & 12,69 \\
+6 & Sheffield & 17\,321 & 23\,691 & 7,01 & 23,90 & 14,75 \\
+7 & Glasgow City & 18\,555 & 23\,136 & 7,85 & 17,60 & 14,65 \\
+8 & Westminster & 19\,774 & 22\,530 & 8,67 & 10,46 & 13,73 \\
+9 & Kirklees & 13\,439 & 19\,637 & 9,38 & 28,66 & 14,80 \\
+10 & Edinburgh, City of & 15\,774 & 18\,717 & 10,06 & 13,18 & 13,40 \\
+\bottomrule
+\end{tabular}
+\caption{Les 10 districts comptant le plus de victimes}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[xbar stacked, width=0.88\textwidth, height=4.2cm, xmin=0, xmax=100,
+  ytick={1,2,3}, yticklabels={{Répartition égale},{Nos données},{Pareto classique}},
+  yticklabel style={font=\small\sffamily}, bar width=14pt, enlarge y limits=0.3,
+  xlabel={\% des districts nécessaires pour atteindre 80 \% des victimes},
+  xlabel style={font=\small}, axis lines*=left, xmajorgrids, grid style={black!10},
+  nodes near coords={\pgfmathprintnumber{\pgfplotspointmeta}\,\%}, nodes near coords style={font=\scriptsize\bfseries,color=white},
+  point meta=x]
+  \addplot[fill=primary,draw=none] coordinates {(80,1) (58,2) (20,3)};
+\end{axis}
+\end{tikzpicture}
+\caption{Les victimes sont bien plus réparties que ne le prévoit la loi de Pareto}
+\end{figure}
+
+\begin{keybox}
+\textbf{241 districts sur 416 (57,9 \%) concentrent 80 \% des victimes}, loin des 20 \% de la loi de Pareto. Le district le plus touché (Birmingham) ne pèse que 2 \% des victimes. Les victimes sont \textbf{réparties sur tout le territoire} et suivent surtout la population et le trafic : cibler quelques districts serait peu efficace.
+\end{keybox}
+
+On observe aussi que les districts du centre de Londres (Westminster 10,5 \%) ont peu d'accidents lourds, alors que les districts plus ruraux (Cornwall 28,8 \%) en ont presque trois fois plus, ce qui annonce le rôle de la zone rurale.
+
+\section{Gold n°2 — Évolution dans le temps}
+
+\begin{itemize}
+  \item \code{LAG(valeur, 1)} récupère la valeur du mois précédent ; \code{LAG(valeur, 12)} celle du \textbf{même mois de l'année précédente}, ce qui neutralise la saisonnalité.
+  \item La \textbf{moyenne glissante sur 12 mois} (\code{ROWS BETWEEN 11 PRECEDING AND CURRENT ROW}) lisse la courbe et révèle la vraie tendance.
+\end{itemize}
+
+\begin{lstlisting}[language=SparkSQL]
+SELECT mois, nb_accidents,
+       LAG(nb_accidents, 1)  OVER (ORDER BY mois) AS nb_accidents_mois_prec,
+       LAG(nb_accidents, 12) OVER (ORDER BY mois) AS nb_accidents_annee_prec,
+       AVG(nb_accidents) OVER (ORDER BY mois
+            ROWS BETWEEN 11 PRECEDING AND CURRENT ROW) AS moy_glissante_12m
+FROM mensuel
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[ybar, width=\textwidth, height=6.2cm, bar width=11pt, ymin=0, ymax=225,
+  xtick=data, x tick label style={/pgf/number format/1000 sep={},font=\footnotesize},
+  ylabel={Accidents (milliers)}, ylabel style={font=\small},
+  enlarge x limits=0.05, axis lines*=left, ymajorgrids, grid style={black!10},
+  nodes near coords, nodes near coords style={font=\tiny,rotate=90,anchor=west},
+  /pgf/number format/precision=0]
+  \addplot[fill=primary,draw=none] coordinates {
+    (2005,198.7) (2006,189.2) (2007,182.1) (2008,170.6) (2009,163.6) (2010,154.4) (2011,151.5)
+    (2012,145.6) (2013,138.7) (2014,146.3) (2015,140.1) (2016,136.6) (2017,130.0)};
+\end{axis}
+\end{tikzpicture}
+\caption{Nombre d'accidents par année : $-35$\,\% entre 2005 et 2017}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[width=\textwidth, height=5.6cm, ymin=12, ymax=20,
+  xtick={2005,2007,...,2017}, x tick label style={/pgf/number format/1000 sep={},font=\footnotesize},
+  ylabel={\% graves ou mortels}, ylabel style={font=\small},
+  axis lines*=left, ymajorgrids, grid style={black!10}]
+  \addplot[very thick,accent,mark=*,mark options={fill=accent}] coordinates {
+    (2005,14.06) (2006,14.73) (2007,14.85) (2008,14.93) (2009,14.71) (2010,14.36) (2011,15.04)
+    (2012,15.48) (2013,15.31) (2014,15.26) (2015,15.46) (2016,17.14) (2017,18.63)};
+\end{axis}
+\end{tikzpicture}
+\caption{Part d'accidents graves ou mortels : de 14 \% à 19 \%}
+\end{figure}
+
+\begin{keybox}
+\begin{itemize}
+  \item \textbf{Les accidents baissent} d'un tiers (de 198\,735 à 129\,982). La moyenne glissante passe de 16\,441 à 10\,832 accidents par mois ($-34{,}1$\,\%).
+  \item \textbf{Mais ils sont plus graves} : la part d'accidents graves ou mortels passe de 14 \% à 19 \%. Ce sont surtout les petits accidents qui ont diminué. Le saut de 2016 pourrait aussi venir d'un changement de méthode d'enregistrement par la police (hypothèse non vérifiée).
+  \item \textbf{Saisonnalité :} plus d'accidents en octobre et novembre (nuits plus longues, pluie), mais des accidents plus graves en été (août : 16,3 \%).
+\end{itemize}
+\end{keybox}
+
+\section{Gold n°3 — Les facteurs qui aggravent les accidents}
+
+C'est la table qui \textbf{répond directement à la problématique}. Pour chaque facteur, nous calculons le taux d'accidents graves ou mortels de chaque modalité et le comparons au taux global (15,3 \%) : c'est le \textbf{risque relatif}.
+
+\begin{lstlisting}[language=SparkSQL]
+WITH long_format AS (
+    SELECT STACK(8,
+             'Luminosite',        CAST(light_conditions    AS STRING),
+             'Limite de vitesse', CAST(speed_limit         AS STRING),
+             'Zone',              CAST(urban_or_rural_area AS STRING), ...
+           ) AS (facteur, modalite),
+           CASE WHEN accident_severity IN ('Serious','Fatal') THEN 1 ELSE 0 END AS est_grave
+    FROM v_silver
+)
+SELECT facteur, modalite, COUNT(*) AS nb_accidents,
+       ROUND(AVG(est_grave) * 100, 2) AS pct_graves_mortels,
+       ROW_NUMBER() OVER (PARTITION BY facteur ORDER BY AVG(est_grave) DESC) AS rang
+FROM long_format
+WHERE modalite IS NOT NULL
+GROUP BY facteur, modalite
+HAVING COUNT(*) >= 1000
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\small
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X r r r r@{}}
+\toprule
+\headrow \hd{Facteur} & \hd{Modalité la plus grave} & \hd{Accidents} & \hd{\% graves} & \hd{\% mortels} & \hd{Risque rel.} \\
+\midrule
+Luminosité & Darkness - no lighting & 112\,644 & 24,27 & 4,39 & \textbf{1,59} \\
+Limite de vitesse & 60 mph & 317\,469 & 22,46 & 3,15 & \textbf{1,47} \\
+Zone & Rural & 724\,757 & 18,85 & 2,35 & \textbf{1,23} \\
+Week-end & Oui & 498\,479 & 17,66 & 1,75 & 1,16 \\
+Météo & Fine + high winds & 25\,816 & 17,07 & 1,86 & 1,12 \\
+Type de route & Single carriageway & 1\,527\,882 & 16,17 & 1,31 & 1,06 \\
+État de la route & Flood over 3cm deep & 2\,845 & 15,89 & 2,04 & 1,04 \\
+Jeune conducteur & Non & 961\,160 & 15,17 & 1,39 & 0,99 \\
+\bottomrule
+\end{tabularx}
+\caption{Modalité la plus aggravante de chaque facteur (rang 1)}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[xbar, width=0.82\textwidth, height=8cm, xmin=0, xmax=1.8,
+  ytick={1,...,11}, yticklabel style={font=\footnotesize\sffamily},
+  yticklabels={{Rond-point},{Neige},{Pluie},{Urbain},{30 mph},{Jour},{Route simple},{Week-end},{Rural},{60 mph},{Nuit sans éclairage}},
+  bar width=9pt, enlarge y limits=0.06, axis lines*=left, xmajorgrids, grid style={black!10},
+  xlabel={Risque relatif d'accident grave (1,0 = moyenne)}, xlabel style={font=\small},
+  nodes near coords, nodes near coords style={font=\scriptsize}, /pgf/number format/precision=2]
+  \addplot[fill=okgreen!70,draw=none,bar shift=0pt] coordinates {(0.63,1) (0.71,2) (0.89,3) (0.87,4) (0.88,5) (0.93,6)};
+  \addplot[fill=dangerred!80,draw=none,bar shift=0pt] coordinates {(1.06,7) (1.16,8) (1.23,9) (1.47,10) (1.59,11)};
+  \draw[dashed,thick,black!60] (axis cs:1,0.3) -- (axis cs:1,11.7);
+\end{axis}
+\end{tikzpicture}
+\caption{Risque relatif par modalité : en rouge les modalités aggravantes, en vert les protectrices}
+\end{figure}
+
+\begin{keybox}[Interprétation]
+\begin{itemize}
+  \item \textbf{La nuit sans éclairage} : 24 \% d'accidents graves et \textbf{4 fois plus d'accidents mortels} qu'en plein jour (4,39 \% contre 1,03 \%).
+  \item \textbf{Les routes à 60 mph} : 22 \% d'accidents graves, contre 13 \% à 30 mph.
+  \item \textbf{La campagne} : 19 \% d'accidents graves, contre 13 \% en ville.
+  \item \textbf{Surprises :} la pluie, la neige et le verglas rendent les accidents \emph{moins} graves (les conducteurs ralentissent) ; les ronds-points sont les lieux les moins graves ; les jeunes conducteurs n'ont pas d'accidents plus graves.
+\end{itemize}
+\end{keybox}
+
+\subsection{Vérification : la nuit aggrave-t-elle à vitesse égale ?}
+
+Les facteurs sont liés entre eux : une route de campagne est souvent rapide \emph{et} non éclairée. Pour séparer les deux effets, nous croisons la luminosité et la limite de vitesse. Dans une même colonne, la vitesse est identique et seule la luminosité change.
+
+\begin{table}[H]
+\centering
+\setlength{\tabcolsep}{9pt}
+\begin{tabular}{@{}l c c c c c c@{}}
+\toprule
+\headrow \hd{Luminosité \textbackslash\ Vitesse} & \hd{20 mph} & \hd{30 mph} & \hd{40 mph} & \hd{50 mph} & \hd{60 mph} & \hd{70 mph} \\
+\midrule
+Jour & \hm{14,8}{14} & \hm{12,4}{2} & \hm{14,0}{10} & \hm{16,3}{21} & \hm{21,8}{49} & \hm{13,3}{7} \\
+Nuit éclairée & \hm{16,3}{21} & \hm{16,3}{21} & \hm{18,8}{34} & \hm{17,2}{26} & \hm{19,3}{36} & \hm{14,8}{14} \\
+Nuit sans éclairage & — & \hm{18,9}{35} & \hm{24,6}{63} & \hm{26,8}{74} & \hm{25,6}{68} & \hm{22,0}{50} \\
+\midrule
+\textbf{Écart nuit sans écl. $-$ jour} & — & \textbf{+6,5} & \textbf{+10,6} & \textbf{+10,5} & \textbf{+3,8} & \textbf{+8,7} \\
+\bottomrule
+\end{tabular}
+\caption{Heatmap du \% d'accidents graves ou mortels (chaque case repose sur plus de 6\,500 accidents)}
+\end{table}
+
+\begin{keybox}
+\textbf{À chaque vitesse, la nuit sans éclairage reste plus grave que le jour}, de +4 à +11 points. À 40 mph, on passe de 14 \% à 25 \% d'accidents graves, presque deux fois plus. La vitesse et l'obscurité jouent \textbf{chacune de leur côté} et leurs effets \textbf{s'additionnent} : l'effet de la nuit n'est pas seulement un effet de la vitesse.
+\end{keybox}
+
+\section{Compaction avec OPTIMIZE}
+
+Chaque opération Delta (WRITE, MERGE, RESTORE) ajoute des fichiers. Sur HDFS, c'est un problème : le \textbf{NameNode} garde en mémoire la liste de tous les fichiers et blocs, et Spark doit ouvrir chaque fichier.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l l l@{}}
+\toprule
+\headrow \hd{} & \hd{Avant OPTIMIZE} & \hd{Après OPTIMIZE} \\
+\midrule
+Nombre de fichiers & \textbf{11} & \textbf{1} \\
+Taille des fichiers & de 3,4 à 10,3 Mo (sous la taille d'un bloc) & 103 Mo ($\approx$ 7 blocs pleins) \\
+Taille totale & $\approx$ 104 Mo & $\approx$ 103 Mo (aucune perte) \\
+\bottomrule
+\end{tabular}
+\caption{Effet de la commande \texttt{OPTIMIZE} sur la table Silver}
+\end{table}
+
+Le NameNode n'a plus qu'un fichier à suivre, avec des blocs remplis. Les anciens fichiers restent disponibles pour le Time Travel jusqu'à un \code{VACUUM}. C'est pour la même raison que les tables Gold sont écrites avec \code{coalesce(1)}.
+
+% ==============================================================================
+\chapter{Jour 4 — Statistiques, segmentation et dashboard}
+% ==============================================================================
+
+\section{Vue d'ensemble}
+
+Au Jour 3, nous avons \textbf{observé} des différences. Le Jour 4 a trois objectifs : les \textbf{prouver} par des tests statistiques, \textbf{regrouper} les districts qui se ressemblent, et \textbf{restituer} les résultats dans un dashboard.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.5cm and 1.0cm]
+  \node[silver=2.6cm] (s) {SILVER\\\scriptsize\normalfont 2\,047\,256 accidents};
+  \node[step=2.8cm,right=of s,yshift=1.0cm] (e) {Échantillon\\\scriptsize 102\,462 lignes};
+  \node[step=2.8cm,right=of s,yshift=-1.0cm] (d) {416 districts\\\scriptsize $\times$ 5 features};
+  \node[step=2.8cm,right=of e,yshift=0.6cm] (t1) {Test $\chi^2$\\\scriptsize luminosité $\times$ gravité};
+  \node[step=2.8cm,right=of e,yshift=-0.6cm] (t2) {Mann-Whitney\\\scriptsize rural vs urbain};
+  \node[gold=2.8cm,right=of d] (g4) {segments\_districts\\\scriptsize\normalfont K-Means, k = 3};
+  \node[box=2.4cm,fill=primarylight,right=of g4] (app) {\textbf{Dashboard}\\\scriptsize Streamlit};
+  \node[gold=2.4cm,above=0.5cm of app] (g13) {3 tables Gold\\\scriptsize\normalfont du Jour 3};
+  \draw[arr] (s.east) -- node[lbl,above,sloped]{sample 5\,\%} (e.west);
+  \draw[arr] (s.east) -- node[lbl,below,sloped]{groupBy} (d.west);
+  \draw[arr] (e.east) -- (t1.west); \draw[arr] (e.east) -- (t2.west);
+  \draw[arr] (d) -- (g4); \draw[arr] (g4) -- (app); \draw[arr] (g13) -- (app);
+\end{tikzpicture}}
+\caption{Les trois volets du Jour 4}
+\end{figure}
+
+\section{Tests d'hypothèses}
+
+\subsection{Principe et choix des tests}
+
+Un test statistique répond à la question : \emph{la différence observée est-elle réelle, ou due au hasard ?} On pose une hypothèse nulle $H_0$ (aucun lien) et une hypothèse alternative $H_1$. Si la \textbf{p-value} est inférieure à $0{,}05$, on rejette $H_0$.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}X l l@{}}
+\toprule
+\headrow \hd{Situation} & \hd{Test} & \hd{Utilisé} \\
+\midrule
+2 variables qualitatives & $\chi^2$ d'indépendance & \textcolor{okgreen}{\checkmark} luminosité $\times$ gravité \\
+Variable asymétrique, 2 groupes & Mann-Whitney U & \textcolor{okgreen}{\checkmark} victimes rural vs urbain \\
+Variable asymétrique, 3 groupes ou plus & Kruskal-Wallis & — \\
+2 variables numériques & Spearman & — \\
+\bottomrule
+\end{tabularx}
+\caption{Choix du test selon le type des variables}
+\end{table}
+
+\begin{tcolorbox}[enhanced,colback=white,colframe=primary,arc=2pt,boxrule=0.8pt,
+  title=\textbf{Hypothèses testées},fonttitle=\sffamily,colbacktitle=primary]
+\textbf{Test n°1 — $\chi^2$ : luminosité $\times$ gravité}
+\begin{itemize}
+  \item $H_0$ : la gravité de l'accident est \textbf{indépendante} des conditions de luminosité.
+  \item $H_1$ : la gravité \textbf{dépend} des conditions de luminosité.
+  \item \emph{Justification :} les deux variables sont qualitatives.
+\end{itemize}
+\textbf{Test n°2 — Mann-Whitney : nombre de victimes, rural vs urbain}
+\begin{itemize}
+  \item $H_0$ : le nombre de victimes a la \textbf{même distribution} en zone rurale et urbaine.
+  \item $H_1$ : le nombre de victimes est \textbf{plus élevé} en zone rurale (test unilatéral).
+  \item \emph{Justification :} on compare deux groupes, et le nombre de victimes est très déséquilibré (presque toujours 1, parfois jusqu'à 93). Mann-Whitney compare des \textbf{rangs} : il n'est pas faussé par les valeurs extrêmes, contrairement à un test basé sur la moyenne.
+\end{itemize}
+\end{tcolorbox}
+
+\subsection{Préparation des données}
+
+Conformément aux bonnes pratiques Big Data, on ne rapatrie jamais toute la table Silver dans pandas : Spark sélectionne 4 colonnes et tire un échantillon aléatoire de 5 \%.
+
+\begin{lstlisting}[language=Python]
+df_sample = (
+    spark.read.format("delta").load(SILVER_MAIN_PATH)
+    .select("light_conditions", "accident_severity",
+            "urban_or_rural_area", "number_of_casualties")
+    .dropna()
+    .filter(F.col("urban_or_rural_area").isin("Rural", "Urban"))
+    .sample(fraction=0.05, seed=42)      # ~5 % des accidents
+    .toPandas()                          # 102 462 lignes
+)
+\end{lstlisting}
+
+\subsection{Résultats}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l r r r@{}}
+\toprule
+\headrow \hd{Luminosité} & \hd{Fatal} & \hd{Serious} & \hd{Slight} \\
+\midrule
+Jour (\emph{Daylight}) & 1,0 \% & 13,4 \% & 85,6 \% \\
+Nuit éclairée & 1,4 \% & 15,0 \% & 83,7 \% \\
+Nuit, éclairage éteint & 1,5 \% & 16,3 \% & 82,3 \% \\
+Nuit, éclairage inconnu & 1,6 \% & 13,9 \% & 84,5 \% \\
+\textbf{Nuit sans éclairage} & \textbf{4,1 \%} & \textbf{20,2 \%} & 75,7 \% \\
+\bottomrule
+\end{tabular}
+\caption{Test n°1 : répartition de la gravité selon la luminosité}
+\end{table}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabular}{@{}l r r r r@{}}
+\toprule
+\headrow \hd{Groupe} & \hd{Accidents} & \hd{Médiane} & \hd{Moyenne} & \hd{2 victimes ou plus} \\
+\midrule
+Rural & 36\,389 & 1 & 1,474 & \textbf{30,3 \%} \\
+Urbain & 66\,073 & 1 & 1,273 & \textbf{18,8 \%} \\
+\bottomrule
+\end{tabular}
+\caption{Test n°2 : nombre de victimes selon la zone}
+\end{table}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l l l X@{}}
+\toprule
+\headrow \hd{Test} & \hd{Statistique} & \hd{p-value} & \hd{Taille de l'effet} \\
+\midrule
+$\chi^2$ luminosité $\times$ gravité & $\chi^2 = 679{,}8$ (8 ddl) & $1{,}57 \times 10^{-141}$ & V de Cramér = \textbf{0,058} \\
+Mann-Whitney rural $>$ urbain & $U = 1\,344\,048\,954$ & $\approx 0$ & Probabilité de supériorité = \textbf{0,559} \\
+\bottomrule
+\end{tabularx}
+\caption{Synthèse des deux tests}
+\end{table}
+
+\begin{keybox}[Interprétation]
+\textbf{Les deux p-values sont très inférieures à 0,05 : on rejette $H_0$ dans les deux cas.} La gravité dépend de la luminosité (4,1 \% d'accidents mortels la nuit sans éclairage contre 1,0 \% le jour), et les accidents ruraux font plus de victimes (30 \% en font au moins 2, contre 19 \% en ville).
+\end{keybox}
+
+\begin{warnbox}[Le piège des grands échantillons]
+Avec 100\,000 lignes, même une différence minuscule devient significative. La \textbf{taille de l'effet} nuance le résultat : un V de Cramér de 0,058 et une probabilité de supériorité de 0,56 indiquent des effets \textbf{réels mais modérés}. La plupart des accidents restent légers quelles que soient les conditions : ces facteurs augmentent le risque sans tout expliquer.
+\end{warnbox}
+
+\section{Segmentation des districts par K-Means}
+
+\subsection{Features et prétraitement}
+
+Spark résume les 2 millions d'accidents en \textbf{une ligne par district} décrite par 5 features, qui reprennent les facteurs aggravants identifiés au Jour 3.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X r@{}}
+\toprule
+\headrow \hd{Feature} & \hd{Ce qu'elle décrit} & \hd{Médiane} \\
+\midrule
+\code{nb_accidents} & Le volume d'accidents & 4\,036 \\
+\code{pct_graves_mortels} & La gravité & 15,7 \% \\
+\code{pct_nuit} & La part d'accidents de nuit & 26,5 \% \\
+\code{pct_rural} & La part d'accidents à la campagne & 49,8 \% \\
+\code{pct_vitesse_60_plus} & La part sur des routes à 60 mph ou plus & 29,5 \% \\
+\bottomrule
+\end{tabularx}
+\caption{Features de segmentation (416 districts)}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.7cm]
+  \node[step=2.6cm] (a) {416 districts\\\scriptsize $\times$ 5 features};
+  \node[step=2.8cm,right=of a] (b) {\textbf{log1p}\\\scriptsize sur nb\_accidents};
+  \node[step=2.8cm,right=of b] (c) {\textbf{StandardScaler}\\\scriptsize même échelle};
+  \node[step=2.6cm,right=of c] (d) {\textbf{K-Means}\\\scriptsize k = 3, seed 42};
+  \node[step=2.8cm,right=of d] (e) {Médianes\\\scriptsize $\rightarrow$ nom métier};
+  \node[gold=2.6cm,right=of e] (f) {segments\_\\districts};
+  \draw[arr] (a)--(b); \draw[arr] (b)--(c); \draw[arr] (c)--(d); \draw[arr] (d)--(e); \draw[arr] (e)--(f);
+\end{tikzpicture}}
+\caption{Chaîne de segmentation}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{\code{log1p}} : \code{nb_accidents} va de 318 à 39\,662. Sans le log, les très grandes villes seraient si éloignées des autres qu'elles formeraient un groupe à elles seules.
+  \item \textbf{\code{StandardScaler}} : K-Means mesure des distances. Sans mise à l'échelle, le volume (en milliers) écraserait les pourcentages (de 0 à 100).
+\end{itemize}
+
+\subsection{Choix du nombre de groupes}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[width=0.62\textwidth, height=5cm, xmin=1.7, xmax=6.3, ymin=0.2, ymax=0.37,
+  xtick={2,...,6}, xlabel={Nombre de groupes $k$}, ylabel={Score de silhouette},
+  label style={font=\small}, axis lines*=left, ymajorgrids, grid style={black!10},
+  nodes near coords, nodes near coords style={font=\scriptsize,anchor=south}, /pgf/number format/precision=3]
+  \addplot[very thick,primary,mark=*] coordinates {(2,0.343) (3,0.249) (4,0.233) (5,0.223) (6,0.236)};
+  \addplot[only marks,mark=*,mark size=4pt,accent] coordinates {(3,0.249)};
+\end{axis}
+\end{tikzpicture}
+\caption{Score de silhouette selon $k$ (k = 3 retenu, en orange)}
+\end{figure}
+
+$k = 2$ obtient le meilleur score, mais il sépare seulement « ville » et « campagne ». \textbf{$k = 3$} ajoute un segment intermédiaire plus utile pour l'analyse, avec un score encore correct.
+
+\subsection{Profil des segments}
+
+\begin{table}[H]
+\centering
+\small
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l r r r r r X@{}}
+\toprule
+\headrow \hd{Segment} & \hd{Districts} & \hd{Accidents} & \hd{\% graves} & \hd{\% rural} & \hd{\% $\geq$ 60} & \hd{Exemples} \\
+\midrule
+\textbf{Urbain dense} & 96 & 8\,219 & \textbf{12,9} & 6,8 & 2,3 & Birmingham, Leeds, Glasgow City \\
+\textbf{Mixte / périurbain} & 153 & 3\,710 & \textbf{14,5} & 38,8 & 23,0 & Milton Keynes, Plymouth \\
+\textbf{Rural} & 167 & 3\,241 & \textbf{19,3} & 75,3 & 50,3 & Cornwall, Wiltshire \\
+\bottomrule
+\end{tabularx}
+\caption{Profil médian de chaque segment}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[ybar, width=0.62\textwidth, height=5.2cm, ymin=0, ymax=23, bar width=32pt,
+  xtick={1,2,3}, xticklabels={Urbain dense,Mixte,Rural}, x tick label style={font=\small\sffamily},
+  ylabel={\% graves ou mortels}, ylabel style={font=\small}, enlarge x limits=0.3,
+  axis lines*=left, ymajorgrids, grid style={black!10},
+  nodes near coords={\pgfmathprintnumber{\pgfplotspointmeta}\,\%}, nodes near coords style={font=\footnotesize\bfseries},
+  /pgf/number format/precision=1]
+  \addplot[fill=primary,draw=none] coordinates {(1,12.9) (2,14.5) (3,19.3)};
+\end{axis}
+\end{tikzpicture}
+\caption{La gravité augmente de la ville vers la campagne}
+\end{figure}
+
+\begin{keybox}[Interprétation]
+En ville, les accidents sont \textbf{nombreux mais peu graves} (on y roule lentement) ; à la campagne, ils sont \textbf{moins nombreux mais beaucoup plus graves} (la moitié a lieu sur des routes à 60 mph ou plus). La part d'accidents de nuit est semblable partout (25 à 28 \%) : ce n'est pas elle qui distingue les districts. La segmentation retrouve, à l'échelle territoriale, les résultats du Jour 3.
+\end{keybox}
+
+\section{Dashboard Streamlit}
+
+\subsection{Architecture}
+
+Le dashboard (\code{app/dashboard.py}, servi sur le port 8501) est le livrable final. Il respecte une règle d'architecture stricte : il lit \textbf{uniquement la couche Gold}. Ces tables étant petites (37 à 416 lignes), l'affichage est instantané.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.3cm]
+  \node[gold=3.2cm] (a) {evolution\_mensuelle\\\scriptsize\normalfont 156 lignes};
+  \node[gold=3.2cm,below=of a] (b) {facteurs\_gravite\\\scriptsize\normalfont 37 lignes};
+  \node[gold=3.2cm,below=of b] (c) {segments\_districts\\\scriptsize\normalfont 416 lignes};
+  \node[gold=3.2cm,below=of c] (d) {pareto\_districts\\\scriptsize\normalfont 416 lignes};
+  \begin{scope}[on background layer]
+    \node[draw=goldc!80!black,dashed,rounded corners,fit=(a)(d),inner sep=8pt,label={[font=\scriptsize\sffamily\bfseries,text=goldc!60!black]above:HDFS \texttt{/lakehouse/gold/}}] (hdfs) {};
+  \end{scope}
+  \node[box=3.0cm,fill=primarylight,right=2.4cm of hdfs] (app) {\textbf{app/dashboard.py}\\\scriptsize cache Spark + cache 60 s};
+  \node[box=2.4cm,right=1.2cm of app] (u) {Navigateur\\\scriptsize localhost:8501};
+  \draw[arr] (hdfs) -- node[lbl,above]{load\_gold\_table()} (app);
+  \draw[arr] (app) -- (u);
+\end{tikzpicture}
+\caption{Le dashboard ne lit que les tables Gold}
+\end{figure}
+
+Deux mécanismes de cache évitent les recalculs : \code{@st.cache_resource} démarre Spark une seule fois, et \code{@st.cache_data(ttl=60)} lit chaque table au plus une fois par minute.
+
+\subsection{Contenu}
+
+En tête de page, \textbf{quatre indicateurs clés} sont calculés à partir de la table Gold : nombre total d'accidents, part d'accidents graves, évolution 2005--2017 et part d'accidents graves en 2017.
+
+\begin{table}[H]
+\centering
+\small
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l l X l@{}}
+\toprule
+\headrow \hd{Section} & \hd{Table Gold} & \hd{Visualisation} & \hd{Filtre} \\
+\midrule
+1. Évolution & \code{evolution_mensuelle} & Courbe et moyenne glissante, \% graves & Curseur de période \\
+2. Facteurs & \code{facteurs_gravite} & Barres du risque relatif & Choix des facteurs \\
+3. Segments & \code{segments_districts} & Nuage de points \% rural $\times$ \% graves & Segments + recherche \\
+4. Pareto & \code{pareto_districts} & Courbe de Pareto et top des districts & Taille du top \\
+\bottomrule
+\end{tabularx}
+\caption{Organisation du dashboard}
+\end{table}
+
+Chaque section se termine par une phrase de conclusion et un \code{st.expander} « Requête SQL \& justification statistique » qui affiche la requête ayant produit la table Gold et justifie les indicateurs retenus (médiane, moyenne glissante, risque relatif, tests, log1p, silhouette).
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}X X@{}}
+\toprule
+\headrow \hd{Consigne} & \hd{Réalisation} \\
+\midrule
+Lire uniquement la couche Gold & Les 4 chemins commencent par \code{/lakehouse/gold/} \\
+Au moins un filtre interactif & 5 filtres (2 curseurs, 2 sélections multiples, 1 liste) \\
+3 à 4 visualisations Plotly & 5 graphiques \\
+Requête SQL et justification sous chaque analyse & Un expander par section \\
+\bottomrule
+\end{tabularx}
+\caption{Respect des consignes du dashboard}
+\end{table}
+
+% ==============================================================================
+\chapter{Conclusion}
+% ==============================================================================
+
+\section{Synthèse du projet}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+\headrow \hd{Jour} & \hd{Réalisation} & \hd{Résultat clé} \\
+\midrule
+\textbf{J1} & Stockage HDFS et couche \textcolor{bronzec}{\bfseries Bronze} & 2 tables brutes et traçables, tolérance aux pannes vérifiée \\
+\textbf{J2} & Nettoyage, jointure, couche \textcolor{silverc!70!black}{\bfseries Silver}, garanties ACID & 1 table propre de 2\,047\,256 accidents \\
+\textbf{J3} & Analyses Spark SQL et 3 tables \textcolor{goldc!80!black}{\bfseries Gold} & Nuit sans éclairage, 60 mph et campagne aggravent les accidents \\
+\textbf{J4} & Tests statistiques, K-Means, dashboard & Résultats prouvés ($p < 0{,}05$), districts ruraux les plus graves \\
+\bottomrule
+\end{tabularx}
+\caption{Synthèse des quatre jours}
+\end{table}
+
+\section{Réponse à la problématique}
+
+\begin{keybox}[Quels facteurs aggravent la sévérité des accidents ?]
+\begin{enumerate}
+  \item \textbf{Le manque de visibilité :} la nuit sans éclairage, un accident est \textbf{4 fois plus souvent mortel} qu'en plein jour. L'effet persiste à vitesse égale et il est statistiquement prouvé ($\chi^2$, $p \approx 10^{-141}$).
+  \item \textbf{La vitesse :} les routes à 60 mph ont le plus fort taux d'accidents graves (22 \%).
+  \item \textbf{La campagne :} les accidents ruraux font plus de victimes (Mann-Whitney, $p \approx 0$), et les districts ruraux sont les plus graves (19 \% contre 13 \% en ville).
+  \item \textbf{Ce qui n'aggrave pas :} la mauvaise météo rend les accidents \emph{moins} graves (les conducteurs ralentissent), et les jeunes conducteurs n'ont pas d'accidents plus graves.
+\end{enumerate}
+\end{keybox}
+
+\section{Recommandations}
+
+Les victimes étant réparties sur tout le territoire (58 \% des districts pour 80 \% des victimes), la prévention doit cibler les \textbf{facteurs de risque} plutôt que quelques « points noirs » :
+\begin{itemize}
+  \item \textbf{améliorer l'éclairage} des routes rapides de campagne ;
+  \item \textbf{renforcer le contrôle de la vitesse} sur les routes rurales à 60 mph ;
+  \item \textbf{suivre la gravité}, et pas seulement le nombre d'accidents : celui-ci baisse alors que la part d'accidents graves augmente.
+\end{itemize}
+
+\section{Limites et perspectives}
+
+\begin{itemize}
+  \item \textbf{Corrélation n'est pas causalité :} d'autres facteurs absents des données peuvent jouer (fatigue, alcool, délai d'arrivée des secours).
+  \item \textbf{Effets modérés :} les facteurs identifiés augmentent le risque sans tout expliquer (V de Cramér = 0,058).
+  \item \textbf{Couverture partielle des véhicules :} seuls 68 \% des accidents ont été rapprochés d'un véhicule, ce qui limite l'analyse de l'âge du conducteur.
+  \item \textbf{Perspectives :} un modèle de régression logistique permettrait de mesurer l'effet de chaque facteur \emph{toutes choses égales par ailleurs}, et l'ajout des données de trafic permettrait de calculer un taux d'accidents par kilomètre parcouru.
+\end{itemize}
+
+% ==============================================================================
+\appendix
+\chapter{Annexes}
+% ==============================================================================
+
+\section{Inventaire de la couche Gold}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l r X l@{}}
+\toprule
+\headrow \hd{Table} & \hd{Lignes} & \hd{Technique} & \hd{Dashboard} \\
+\midrule
+\code{/lakehouse/gold/pareto_districts} & 416 & CTE, DENSE\_RANK, cumul OVER & Section 4 \\
+\code{/lakehouse/gold/evolution_mensuelle} & 156 & LAG, moyenne glissante & Indicateurs, section 1 \\
+\code{/lakehouse/gold/facteurs_gravite} & 37 & STACK, ROW\_NUMBER & Section 2 \\
+\code{/lakehouse/gold/segments_districts} & 416 & K-Means & Section 3 \\
+\bottomrule
+\end{tabularx}
+\caption{Tables Gold produites}
+\end{table}
+
+\section{Glossaire}
+
+\begin{table}[H]
+\centering
+\small
+\rowcolors{2}{rowgray}{white}
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+\headrow \hd{Terme} & \hd{Définition} \\
+\midrule
+ACID & Garanties d'une transaction : atomicité, cohérence, isolation, durabilité \\
+Broadcast Join & Jointure où la petite table est copiée sur chaque exécuteur, sans redistribuer la grande \\
+Delta Lake & Format de table sur Parquet avec journal de transactions, historique et Time Travel \\
+IQR & Écart interquartile ($P75 - P25$) : dispersion robuste aux valeurs extrêmes \\
+K-Means & Algorithme qui regroupe les éléments proches en $k$ groupes \\
+Lazy Evaluation & Spark ne calcule une transformation qu'au moment où une action en a besoin \\
+NameNode & Nœud HDFS qui garde en mémoire la carte de tous les fichiers et blocs \\
+p-value & Probabilité d'observer un tel écart si $H_0$ était vraie ; $< 0{,}05$ : on rejette $H_0$ \\
+Risque relatif & Taux d'une modalité divisé par le taux moyen ; $> 1$ : facteur aggravant \\
+Shuffle & Redistribution des données entre exécuteurs, coûteuse en réseau \\
+Silhouette & Score de qualité d'un clustering, entre $-1$ et $1$ \\
+Skewness & Mesure d'asymétrie d'une distribution ; $> 1$ : forte asymétrie \\
+V de Cramér & Force du lien entre deux variables qualitatives, entre 0 et 1 \\
+\bottomrule
+\end{tabularx}
+\caption{Glossaire des principaux termes}
+\end{table}
+
+\end{document}
